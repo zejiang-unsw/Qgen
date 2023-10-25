@@ -1,3 +1,18 @@
+#' Estimation of lag-1 month-to-month correlation coefficients.
+#'
+#' @param data
+#'
+#' @return a vector
+#' @export
+#'
+ac1mon <- function (data) {
+  TempCor = cor(data, use = "pairwise.complete.obs")
+  v1 = cor(data[-1, 1], data[-nrow(data), ncol(data)], use = "pairwise.complete.obs")
+  v2 = diag(TempCor[-1, ])
+  corLag1 = round(c(v1, v2), 6)
+  return(corLag1)
+}
+
 #' Predictor format
 #'
 #' @param pred.mat a matrix
@@ -11,7 +26,7 @@
 #'
 pred_mat_lag <- function(pred.mat, lag=3, mv=12){
 
-  # 4th predictor - moving average with window size (n=3 for season/n=12 for month) of each predictor
+  # additional predictor - moving average with window size (n=3 for season/n=12 for month) of each predictor
   n <- nrow(pred.mat)
   n_pred <- ncol(pred.mat)
   Xavg = matrix(NA, nrow=n,ncol=n_pred)
@@ -31,10 +46,8 @@ pred_mat_lag <- function(pred.mat, lag=3, mv=12){
   head(pred.all)
 
   vars <- colnames(pred.mat)
-  colnames(pred.all) <- c(vars[1], paste0(vars[1],"t-",c(1:lag,"avg")),
-                            vars[2], paste0(vars[2],"t-",c(1:lag,"avg")),
-                            vars[3], paste0(vars[3],"t-",c(1:lag,"avg")),
-                            vars[4], paste0(vars[4],"t-",c(1:lag,"avg")))
+  vars_all <- sapply(vars, function(vec) c(vec, paste0(vec,"t-",c(1:lag,"avg"))))
+  colnames(pred.all) <- vars_all
 
   return(pred.all)
 }

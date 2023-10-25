@@ -18,12 +18,15 @@ library(hydroTSM)
 library(Ecdat)
 library(ExtDist)
 library(anySim)
-library(SWG)
+library(Qgen)
 
 #==============================================================================#
 # global variables----
-flag.save <- T
+flag.save <- T # save the Qsim or not
+
+#v0 only val for  # v1 out of val
 flag.ver <- switch(1, "","_v1","_v2")
+
 flag.sel <- switch(2, "ALL","NPRED","WASP") # predictor selection method
 dpi_fig <- switch(1, 300, 500) # result quick check
 val.st <- 1971; val.end <- 2000 # validation period
@@ -35,12 +38,13 @@ nensemble <- 20 # must larger than 1 for knn bootstrap
 time.st <- Sys.time()
 #==============================================================================#
 #load data----
-# response
+# obsvered Q
 station_id <- "Q5"
 data("Harz_obs_Q")
 
 Qday <- Harz_obs_Q[[station_id]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval")
 Qmon <- aggregate(Qd~year+month, Qday, FUN = mean) %>% rename("Qm"="Qd") %>% arrange(year,month)
+Qyr <- aggregate(Qd~year+month, Qday, FUN = mean) %>% rename("Qa"="Qd") %>% arrange(year)
 head(Qmon[,1:2])
 tail(Qmon[,1:2])
 date_Qobs <- as.Date(paste(Qmon[,1],Qmon[,2],"1", sep="-"))
@@ -49,13 +53,21 @@ range(date_Qobs)
 # obsvered climate
 data("Harz_obs_cli")
 pred.mat <- sapply(Harz_obs_cli, function(ls) ls[[3]])
+#pred.mat <- pred.mat[,-4] # remove Gmon
+head(pred.mat)
+
+# add Water Balance here
+pred.mat <- pred.mat %>% data.frame() %>% mutate(Bmon = Pmon-Emon)
 colnames(pred.mat)
 head(pred.mat)
+
 Pmon <- Harz_obs_cli[[1]]
 date_cli <- as.Date(paste(Pmon[,1],Pmon[,2],"1", sep="-"))
 range(date_cli)
 
 # dates----
+date_year <- val.st:val.end
+
 date_val <- seq(as.Date(paste(val.st,"1","1",sep="-")),
                   as.Date(paste(val.end,"12","1",sep="-")),
                   by="month")
@@ -65,20 +77,22 @@ ind_Qobs1 <- which(date_Qobs %in% date_cli)
 
 ind_cli <-  which(date_cli %in% date_val)
 
-
+# output----
+path.out <- paste0("reports/",station_id,"/")
 #==============================================================================#
 # predictor selection----
 n_lag <- 3; mv <- 12
 pred.mat.n <- pred_mat_lag(pred.mat, lag=n_lag, mv=mv)
 summary(pred.mat.n)
 
-mat <- cbind(Q=Qmon$Qm[ind_Qobs], pred.mat.n[ind_cli,]) %>% na.omit()
+mat <- cbind(Q=Qmon$Qm[ind_Qobs1], pred.mat.n) %>% na.omit()
+#mat <- cbind(Q=Qmon$Qm[ind_Qobs], pred.mat.n[ind_cli, ]) %>% na.omit()
 summary(mat)
 colnames(mat)
 
 ## check data----
 plot.ts(mat[,1:10], main=NA, xlab=NA)
-pairs(mat[,c(1, seq(2,by=5,length.out=4))])
+pairs(mat[,c(1, seq(2,by=5,length.out=ncol(pred.mat)))])
 
 x <- mat[,1]
 py<- mat[,-1]
@@ -89,12 +103,12 @@ if(flag.sel=="NPRED"){
   out <- WASP::stepwise.VT(list(x=x, dp=py), wf="haar", mode="MODWT",J=5)
   #out <- WASP::stepwise.VT(list(x=x, dp=py), wf="d4", mode="MRA", J=5)
 } else if(flag.sel=="ALL"){
-  out <- list( cpy=1:ncol(py), wt=rep(1, ncol(py)))
+  out <- list(cpy=1:ncol(py), wt=rep(1, ncol(py)))
 }
 
 if(is.null(out$cpy)){
-  cpy <- seq(1,by=5,length.out=4)
-  wt <- rep(1, 4)
+  cpy <- seq(1,by=5,length.out=ncol(pred.mat))
+  wt <- rep(1, ncol(pred.mat))
 } else {
   cpy <- out$cpy
   wt <- out$wt
@@ -104,20 +118,14 @@ colnames(pred.mat.n)[cpy] %>% print()
 
 ## Save NPERD----
 out <- list(cpy, wt)
-saveRDS(out,file=paste0("reports/Harz_",flag.sel,".rds"))
+saveRDS(out,file=paste0("reports/Harz_",flag.sel,flag.ver,".rds"))
 
 #==============================================================================#
 # knn conditional bootstrap ----
 if(TRUE){
-
-# mat_knn <- cbind(Qmon$Qm[ind_Qobs1], pred.mat.n[, cpy]) %>% na.omit()
-# x <- mat_knn[,1]
-# z <- mat_knn[,-1]
 x <- Qmon$Qm[ind_Qobs1]
 z <- pred.mat.n[, cpy]
 zout <- pred.mat.n[ind_cli, cpy]
-
-
 
 x.boot <- t(sapply(1:length(date_val), function(i) knn(x[-ind_cli[i]],
                                                          z[-ind_cli[i],], zout[i,],
@@ -138,7 +146,7 @@ for(i in 2:nensemble){
 
 plot.ts(cbind(x.boot[,1:min(9,nensemble)],x), plot.type = "single",
         col=c(rep("grey",min(9,nensemble)),"red"),
-        lwd=c(2,rep(1,min(9,nensemble))),xlab=NA, ylab="Q")
+        lwd=c(2,rep(1,min(9,nensemble))),xlab=NA, ylab="Qmon")
 legend("topright",legend=c("Sim", "Obs"),
        lwd=c(1,1),bg="transparent",bty = "n",
        col=c("grey","red"),cex=0.8,horiz=TRUE)
@@ -192,7 +200,7 @@ p.mon.clim1 <- ggplot(x.mon.mean,aes(x=factor(month), y=sim)) +
 p.mon.clim1 %>% print()
 
 ### save plot----
-ggsave(paste0("reports/figure/Figure_",flag.sel,"_mon_clim",flag.ver,".jpg"),p.mon.clim1,
+ggsave(paste0(path.out, "Figure_",flag.sel,"_mon_clim",flag.ver,".jpg"),p.mon.clim1,
        width = 9, height = 7, dpi=dpi_fig)
 
 ## seasonal climatology ----
@@ -242,7 +250,7 @@ p.sea.clim1 <- ggplot(x.sea.mean_r1,aes(x=factor(season), y=mean)) +
 p.sea.clim1 %>% print()
 
 ### save plot----
-ggsave(paste0("reports/figure/Figure_",flag.sel,"_sea_clim",flag.ver,".jpg"),
+ggsave(paste0(path.out,"Figure_",flag.sel,"_sea_clim",flag.ver,".jpg"),
        width = 9, height = 7, dpi=dpi_fig)
 
 ## detrend and deseason----
@@ -289,7 +297,7 @@ p.mon.cor <- ggplot(mon2mon_cor,aes(x=month, y=value)) +
 p.mon.cor %>% print()
 
 ### save plot----
-ggsave(paste0("reports/figure/Figure_",flag.sel,"_mon_cor",flag.ver,".jpg"), p.mon.cor,
+ggsave(paste0(path.out,"Figure_",flag.sel,"_mon_cor",flag.ver,".jpg"), p.mon.cor,
        width = 9, height = 7, dpi=dpi_fig)
 
 ## Lag l autocorrelation----
@@ -345,7 +353,7 @@ p.acf.mon <- ggplot(df.acf.mon, aes(x=Lag, y=sim)) +
 p.acf.mon %>% print()
 
 ### save plot----
-ggsave(paste0("reports/figure/Figure_",flag.sel,"_mon_",flag.acf,flag.ver,".jpg"),p.acf.mon,
+ggsave(paste0(path.out,"Figure_",flag.sel,"_mon_",flag.acf,flag.ver,".jpg"),p.acf.mon,
        width = 9, height = 7, dpi=dpi_fig)
 
 ## Distribution----
@@ -385,19 +393,21 @@ p.dis.mon <- ggplot(x.sim) +
 p.dis.mon %>% print()
 
 ### save plot----
-ggsave(paste0("reports/figure/Figure_",flag.sel,"_mon_cdf",flag.ver,".jpg"),
+ggsave(paste0(path.out,"Figure_",flag.sel,"_mon_cdf",flag.ver,".jpg"),
        width = 9, height = 7, dpi=dpi_fig)
 
 #==============================================================================#
-# Monthly rescaling----
+# Monthly Disaggregation----
 Qmon_sim <- x.sim
 Qsim_year <- Qmon_sim[,.(value=mean(sim)),by=c("year","group")] %>% spread(group, value)
 summary(Qsim_year)
 
-summary(Qmon)
+Qmon1 <- Qmon %>%  subset(year>=val.st&year<=val.end) # use only the validation period
+#Qmon1 <- Qmon
+summary(Qmon1)
 
-k <- floor(0.5 + 1 * (sqrt(length(date_val))))
-Qsim_mon <- lapply(1:nensemble, function(i) knn_annual_to_monthly(Qsim_year[,c(1,i+1)], Qmon, K=k))
+k <- floor(0.5 + 1 * sqrt(length(unique(Qmon1$year))));k
+Qsim_mon <- lapply(1:nensemble, function(i) knn_annual_to_monthly(Qsim_year[,c(1,i+1)], Qmon1, K=k))
 #summary(Qsim_mon)
 
 #==============================================================================#
@@ -405,21 +415,25 @@ Qsim_mon <- lapply(1:nensemble, function(i) knn_annual_to_monthly(Qsim_year[,c(1
 Qsim_year <- Qmon_sim[,.(value=mean(sim)),by=c("year","group")] %>% spread(group, value) %>% data.frame()
 summary(Qsim_year)
 
-summary(Qday)
+Qday1 <- Qday %>%  subset(year>=val.st&year<=val.end) # use only the validation period
+#Qday1 <- Qday
+summary(Qday1)
 
-Qsim_day <- lapply(1:nensemble, function(i) knn_annual_to_daily(Qsim_year[,c(1,i+1)], Qday, K=k))
+k <- floor(0.5 + 1 * sqrt(length(unique(Qday1$year))));k
+Qsim_day <- lapply(1:nensemble, function(i) knn_annual_to_daily(Qsim_year[,c(1,i+1)], Qday1, K=k))
 #summary(Qsim_day)
 
 
+#==============================================================================#
 (Sys.time() - time.st) %>% print()
 
-# Time difference of 13 secs - r=10
-# Time difference of 16 secs - r=20
-#==============================================================================#
+# Time difference of 52.70773 secs - NPRED
+# Time difference of 23.30932 secs - ALL
+
 ## Save output----
 if(flag.save){
 
-  save(Qsim_mon,file=paste0("reports/Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,"_val.Rdat"))
-  save(Qsim_day,file=paste0("reports/Harz_Qday_",flag.sel,"_r",nensemble,flag.ver,"_val.Rdat"))
+  save(Qsim_mon,file=paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,"_val",flag.ver,".Rdat"))
+  save(Qsim_day,file=paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,"_val",flag.ver,".Rdat"))
 
 }

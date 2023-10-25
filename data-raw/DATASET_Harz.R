@@ -48,10 +48,12 @@ names(Harz_obs_Q) <- stn_list
 usethis::use_data(Harz_obs_Q, overwrite = TRUE)
 
 ## GCM hist----
-# conditional predictor
-path.hist <- "data-raw/Harz-Data/cli_mod_hist/"
 
-Harz_gcm_hist <- NULL
+for(model in c("hist","rcp85")){
+# conditional predictor
+path.hist <- paste0("data-raw/Harz-Data/cli_mod_",model,"/")
+
+Harz_gcm <- NULL
 for(i_mod in 1:6){
 
   #i_mod <- 1
@@ -62,35 +64,10 @@ for(i_mod in 1:6){
   head(pcp1[,1:2]) %>% print()
   tail(pcp1[,1:2]) %>% print()
 
-  Harz_gcm_hist[[i_mod]] <- list(Emon=etp1,Pmon=pcp1,Tmon=tav1,Gmon=glo1)
+  Harz_gcm[[i_mod]] <- list(Pmon=pcp1,Tmon=tav1,Emon=etp1,Gmon=glo1)
 
-  if(flag.save) save(Harz_gcm_hist, file=paste0("data/Harz_GCM",i_mod,"_mon_1971-2005.Rdat"))
-  #usethis::use_data(Harz_gcm_hist, overwrite = TRUE)
 }
 
-
-
-
-## GCM fut----
-# conditional predictor
-path.rcp85 <- "data-raw/Harz-Data/cli_mod_rcp85/"
-
-Harz_gcm_rcp85 <- NULL
-for(i_mod in 1:6){
-
-  #i_mod <- 1
-
-  etp1 <- get(load(paste0(path.rcp85,"Emon_mod_",i_mod,".RDat")))
-  pcp1 <- get(load(paste0(path.rcp85,"Pmon_mod_",i_mod,".RDat")))
-  tav1 <- get(load(paste0(path.rcp85,"Tmon_mod_",i_mod,".RDat")))
-  glo1 <- get(load(paste0(path.rcp85,"Gmon_mod_",i_mod,".RDat")))
-  head(pcp1[,1:2]) %>% print()
-  tail(pcp1[,1:2]) %>% print()
-
-  Harz_gcm_rcp85[[i_mod]] <- list(Emon=etp1, Pmon=pcp1,Tmon=tav1,Gmon=glo1)
-
-  if(flag.save) save(Harz_gcm_rcp85, file=paste0("data/Harz_GCM",i_mod,"_mon_2006-2100.Rdat"))
-  #usethis::use_data(Harz_gcm_rcp85, overwrite = TRUE)
+if(flag.save) save(Harz_gcm, file=paste0("data/Harz_",model,"_mon.Rdat"))
+usethis::use_data(Harz_gcm, overwrite = TRUE)
 }
-
-
