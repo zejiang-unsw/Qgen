@@ -9,7 +9,7 @@ output:
     highlight: tango
     number_section: false
 geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_GCM_r100'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('ALL_GCM_r100_v1'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
 editor_options: 
   chunk_output_type: console
 ---
@@ -28,8 +28,8 @@ library(rmarkdown)
 op <- par() # save original par
 
 nensemble <- 100
-flag.sel <- switch(2, "ALL","NPRED","WASP"); flag.sel
-flag.ver <- switch(1, "","_v1","_v2")
+flag.sel <- switch(1, "ALL","NPRED","WASP"); flag.sel
+flag.ver <- switch(2, "","_v1","_v2")
 
 # Demo station
 station_id <- "Q5"

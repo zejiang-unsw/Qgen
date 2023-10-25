@@ -48,10 +48,12 @@ knn_annual_to_daily <- function(Q1, Q2, K) {
         if(leap_year(v['year']) && !leap_year(y)) {
             doy.leap = 31+28
             Q.sub <- Q.sub %>% add_row(day=29,month=2,year=v['year'],Qd=NA,
-                                       index=Q.sub$index[doy.leap], .after=doy.leap)
+                                       index=Q.sub$index[sample((doy.leap-7):(doy.leap+7),1)],
+                                       .after=doy.leap)
         }
 
         if(!leap_year(v['year']) && leap_year(y)) {
+          Q.sub$index[31+28] <- Q.sub$index[31+28] + Q.sub$index[31+29]
           Q.sub <- Q.sub[-(31+29),]
         }
 

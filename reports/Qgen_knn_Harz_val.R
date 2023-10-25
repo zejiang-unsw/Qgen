@@ -24,16 +24,17 @@ library(Qgen)
 # global variables----
 flag.save <- T # save the Qsim or not
 
-#v0 only val for  # v1 out of val
-flag.ver <- switch(1, "","_v1","_v2")
-
-flag.sel <- switch(2, "ALL","NPRED","WASP") # predictor selection method
-dpi_fig <- switch(1, 300, 500) # result quick check
-val.st <- 1971; val.end <- 2000 # validation period
-#val.st <- 1951; val.end <- 2017 # validation period
-
 set.seed(20230607)
-nensemble <- 20 # must larger than 1 for knn bootstrap
+nensemble <- 100 # must larger than 1 for knn bootstrap
+
+#v0 only val for  # v1 out of val
+flag.ver <- switch(3,"","_v1","_v2")
+
+flag.sel <- switch(1, "ALL","NPRED","WASP") # predictor selection method
+dpi_fig <- switch(1, 300, 500) # result quick check
+#val.st <- 1971; val.end <- 2000 # validation period
+val.st <- 1951; val.end <- 2017 # validation period
+
 
 time.st <- Sys.time()
 #==============================================================================#
@@ -42,7 +43,10 @@ time.st <- Sys.time()
 station_id <- "Q5"
 data("Harz_obs_Q")
 
-Qday <- Harz_obs_Q[[station_id]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval")
+# make sure the complete year
+Qday <- Harz_obs_Q[[station_id]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval") %>% subset(year>=1926&year<=2020)
+head(Qday)
+tail(Qday)
 Qmon <- aggregate(Qd~year+month, Qday, FUN = mean) %>% rename("Qm"="Qd") %>% arrange(year,month)
 Qyr <- aggregate(Qd~year+month, Qday, FUN = mean) %>% rename("Qa"="Qd") %>% arrange(year)
 head(Qmon[,1:2])
@@ -104,6 +108,10 @@ if(flag.sel=="NPRED"){
   #out <- WASP::stepwise.VT(list(x=x, dp=py), wf="d4", mode="MRA", J=5)
 } else if(flag.sel=="ALL"){
   out <- list(cpy=1:ncol(py), wt=rep(1, ncol(py)))
+
+  # cpy <- seq(1,by=5,length.out=ncol(pred.mat))
+  # wt <- rep(1, ncol(pred.mat))
+  # out <- list(cpy=cpy, wt=wt)
 }
 
 if(is.null(out$cpy)){
@@ -134,7 +142,7 @@ x.boot <- t(sapply(1:length(date_val), function(i) knn(x[-ind_cli[i]],
 x <- Qmon$Qm[ind_Qobs]
 z <- pred.mat.n[ind_cli, cpy]
 
-x.boot <- t(sapply(1:length(date_val), function(i) NPRED::knn(x[-i],z[-i,], z[i,],
+x.boot <- t(sapply(1:length(date_val), function(i) knn(x[-i],z[-i,], z[i,],
                                                               pw = wt,reg = FALSE,nensemble = nensemble)))
 }
 
@@ -157,7 +165,7 @@ x.sim <- data.frame(Date=date_val, obs=Qmon$Qm[ind_Qobs], x.boot) %>%
   gather(group, sim,3:(nensemble+2)) %>% mutate_if(is.character,as.factor) %>% data.table()
 
 x.sim[,month:=month(Date),]
-x.sim[,season := time2season(Date,type="calendar"),]
+x.sim[,season := Qgen::time2season(Date,type="calendar"),]
 x.sim[,year := year(Date),]
 
 summary(x.sim)
@@ -402,11 +410,14 @@ Qmon_sim <- x.sim
 Qsim_year <- Qmon_sim[,.(value=mean(sim)),by=c("year","group")] %>% spread(group, value)
 summary(Qsim_year)
 
-Qmon1 <- Qmon %>%  subset(year>=val.st&year<=val.end) # use only the validation period
-#Qmon1 <- Qmon
+if(flag.ver!=""){
+  Qmon1 <- Qmon
+} else if(flag.ver==""){
+  Qmon1 <- Qmon %>%  subset(year>=val.st&year<=val.end) # use only the validation period
+}
 summary(Qmon1)
 
-k <- floor(0.5 + 1 * sqrt(length(unique(Qmon1$year))));k
+k <- floor(0.5 + 3 * sqrt(length(unique(Qmon1$year))));k
 Qsim_mon <- lapply(1:nensemble, function(i) knn_annual_to_monthly(Qsim_year[,c(1,i+1)], Qmon1, K=k))
 #summary(Qsim_mon)
 
@@ -415,11 +426,14 @@ Qsim_mon <- lapply(1:nensemble, function(i) knn_annual_to_monthly(Qsim_year[,c(1
 Qsim_year <- Qmon_sim[,.(value=mean(sim)),by=c("year","group")] %>% spread(group, value) %>% data.frame()
 summary(Qsim_year)
 
-Qday1 <- Qday %>%  subset(year>=val.st&year<=val.end) # use only the validation period
-#Qday1 <- Qday
+if(flag.ver!=""){
+  Qday1 <- Qday
+} else if(flag.ver==""){
+  Qday1 <- Qday %>%  subset(year>=val.st&year<=val.end) # use only the validation period
+}
 summary(Qday1)
 
-k <- floor(0.5 + 1 * sqrt(length(unique(Qday1$year))));k
+k <- floor(0.5 + 3 * sqrt(length(unique(Qday1$year))));k
 Qsim_day <- lapply(1:nensemble, function(i) knn_annual_to_daily(Qsim_year[,c(1,i+1)], Qday1, K=k))
 #summary(Qsim_day)
 

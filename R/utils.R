@@ -70,7 +70,7 @@ time2season <- function (x, out.fmt = "months", type = "default")
     stop("Invalid argument: 'out.fmt' must be in c('seasons', 'months')")
   valid.types <- c("default", "FrenchPolynesia","calendar")
   if (length(which(!is.na(match(type, valid.types)))) <= 0)
-    stop("Invalid argument: 'type' must be in c('default', 'FrenchPolynesia')")
+    stop("Invalid argument: 'type' must be in c('default', 'FrenchPolynesia', 'calendar')")
   months <- format(x, "%m")
   if (type == "default") {
     winter <- which(months %in% c("12", "01", "02"))

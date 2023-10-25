@@ -3,7 +3,7 @@
 #' @param Qobs a vector of monthly Q
 #' @param Qsim a matrix of Q
 #'
-#' @return
+#' @return a list of vector
 #' @export
 storage <- function(Qobs, Qsim) {
   nyr_obs <- length(Qobs)/12

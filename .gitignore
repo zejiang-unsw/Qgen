@@ -2,6 +2,7 @@ data-raw/Harz-Data/
 reports/figure/
 reports/*Rdat
 reports/Q5
+reports/*html
 inst/
 
 # History files

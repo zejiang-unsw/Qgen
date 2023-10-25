@@ -9,7 +9,7 @@ output:
     highlight: tango
     number_section: false
 geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_r100_v1'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('ALL_r100_val_v2'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
 editor_options: 
   chunk_output_type: console
 ---
@@ -27,10 +27,10 @@ library(rmarkdown)
 op <- par() # save original par
 nensemble <- 100
 
-val.st <- 1971; val.end <- 2000 # validation period
+#val.st <- 1971; val.end <- 2000 # validation period
 #val.st <- 1951; val.end <- 2017 # validation period
-flag.ver <- switch(1, "","_v1","_v2")
-flag.sel <- switch(2, "ALL","NPRED","WASP")
+flag.ver <- switch(3, "","_v1","_v2")
+flag.sel <- switch(1, "ALL","NPRED","WASP")
 
 #flag.save <- F
 font_family <- "serif"
@@ -91,20 +91,20 @@ range(date_Qobs)
 
 # simulated monthly & daily
 path.out <- paste0(station_id,"/") 
-load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,"_val.Rdat")) # Qsim_mon
-load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,flag.ver,"_val.Rdat")) # Qsim_day
+load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,"_val",flag.ver,".Rdat")) # Qsim_mon
+load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,"_val",flag.ver,".Rdat")) # Qsim_day
 summary(Qsim_mon[[1]])
 
-# merage
+
+# merge
 Qmon_obs1 <- Qmon_obs %>% rename("obs"="Qm")
 Qmon_sim <- rbindlist(Qsim_mon, idcol="group") %>% rename("sim"="Qm") %>% 
     merge(Qmon_obs1, by=c("year","month"))  %>% 
     mutate(season=cut(month, breaks=c(0, 3, 6, 9, 12), right = T, labels = c(1,2,3,4)))
 
 # dates----
-date_year <- val.st:val.end 
-date_year - unique(Qsim_mon[[1]]$year) #%>% range() # cross check
-
+date_year <- unique(Qsim_mon[[1]]$year) #%>% range() # cross check
+val.st <- date_year[1]; val.end <- date_year[length(date_year)]
 date_mon <- seq(as.Date(paste(val.st,"1","1",sep="-")),
                   as.Date(paste(val.end,"12","1",sep="-")),
                   by="month")

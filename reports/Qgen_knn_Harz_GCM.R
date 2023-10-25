@@ -23,22 +23,19 @@ library(Qgen)
 #==============================================================================#
 # global variables----
 set.seed(20230607)
-mod_id <- c(1:6)[1]
-station_id <- "Q5"
+mod_id <- c(1:6)[1] # GCM realization
+station_id <- "Q5" # station
 nensemble <- 100 # must larger than 1 for knn bootstrap
+
 
 flag.save <- T # save the Qsim or not
 
-#v0 only val for  # v1 out of val
-flag.ver <- switch(1, "","_v1","_v2")
+flag.ver <- switch(2, "","_v1","_v2")
+flag.sel <- switch(1, "ALL","NPRED","WASP") # predictor selection method
 
-flag.sel <- switch(2, "ALL","NPRED","WASP") # predictor selection method
-dpi_fig <- switch(1, 300, 500) # result quick check
-
-#val.st <- 1971; val.end <- 2000 # validation period
-#val.st <- 1951; val.end <- 2017 # validation period
-flag.gcm <- switch (3,"_hist","_rcp85_near", "_rcp85_far")
-
+#flag.gcm <- switch (1,"_hist","_rcp85_near", "_rcp85_far")
+gcms <- c("_hist","_rcp85_near", "_rcp85_far")
+for(flag.gcm in gcms){
 if(flag.gcm=="_hist") {
   val.st <- 1971; val.end <- 2000
 } else if(flag.gcm=="_rcp85_near") {
@@ -53,7 +50,7 @@ time.st <- Sys.time()
 # obsvered Q
 data("Harz_obs_Q")
 
-Qday <- Harz_obs_Q[[station_id]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval")
+Qday <- Harz_obs_Q[[station_id]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval") %>% subset(year>=1926&year<=2020)
 Qmon <- aggregate(Qd~year+month, Qday, FUN = mean) %>% rename("Qm"="Qd") %>% arrange(year,month)
 Qyr <- aggregate(Qd~year+month, Qday, FUN = mean) %>% rename("Qa"="Qd") %>% arrange(year)
 head(Qmon[,1:2])
@@ -117,7 +114,7 @@ path.out <- paste0("reports/",station_id,"/")
 
 #==============================================================================#
 # knn conditional bootstrap ----
-out_sel <- readRDS(paste0("reports/Harz_",flag.sel,".rds"))
+out_sel <- readRDS(paste0("reports/Harz_",flag.sel,flag.ver,".rds"))
 cpy <- out_sel[[1]]
 pw <- out_sel[[2]]
 
@@ -166,5 +163,7 @@ if(flag.save){
 
   save(Qsim_mon,file=paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.gcm,flag.ver,".Rdat"))
   save(Qsim_day,file=paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,flag.gcm,flag.ver,".Rdat"))
+
+}
 
 }

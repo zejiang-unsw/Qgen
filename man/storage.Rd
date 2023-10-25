@@ -2,13 +2,18 @@
 % Please edit documentation in R/storage.R
 \name{storage}
 \alias{storage}
-\title{Title}
+\title{Storage}
 \usage{
 storage(Qobs, Qsim)
 }
 \arguments{
-\item{Qsim}{}
+\item{Qobs}{a vector of monthly Q}
+
+\item{Qsim}{a matrix of Q}
+}
+\value{
+a list of vector
 }
 \description{
-Title
+Storage
 }
