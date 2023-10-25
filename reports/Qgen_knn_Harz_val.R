@@ -27,7 +27,7 @@ flag.save <- T # save the Qsim or not
 set.seed(20230607)
 nensemble <- 100 # must larger than 1 for knn bootstrap
 
-#v0 only val for  # v1 out of val
+#v0 only val for  # v1 out of val # v2 number of k in disaggregation
 flag.ver <- switch(3,"","_v1","_v2")
 
 flag.sel <- switch(1, "ALL","NPRED","WASP") # predictor selection method
@@ -143,7 +143,7 @@ x <- Qmon$Qm[ind_Qobs]
 z <- pred.mat.n[ind_cli, cpy]
 
 x.boot <- t(sapply(1:length(date_val), function(i) knn(x[-i],z[-i,], z[i,],
-                                                              pw = wt,reg = FALSE,nensemble = nensemble)))
+                                                       pw = wt,reg = FALSE,nensemble = nensemble)))
 }
 
 ## Visual check----
