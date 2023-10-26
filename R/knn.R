@@ -68,10 +68,10 @@ knn <- function (x, z, zout, k = 0, pw, reg = TRUE, nensemble = 100,
     Scond <- as.matrix(Sxz)
   }
   if (reg) {
-    xhat <- rep(0, nzout)
+    xhat <- rep(NA, nzout)
   }
   else {
-    xhat <- matrix(0, nzout, nensemble)
+    xhat <- matrix(NA, nzout, nensemble)
     randnum <- array(runif(nzout * nensemble), c(nzout,
                                                  nensemble, k))
     randnum1 <- sweep(randnum, 3, kerncdf)

@@ -30,8 +30,8 @@ knn_annual_to_monthly <- function(Q1, Q2, K) {
         if (K > 1) {
             knn      <- order(distance)[1:K]             # Take the K nearest neighbours
             w        <- (1 / 1:K) / sum(1 / 1:K)         # Calculate weights
-            row      <- sample(knn, size = 1, prob = w)  # Sample according to weights
-        } else row <- order(distance)[1]
+            row      <- sample(knn, size = 2, prob = w)  # Sample according to weights
+        } else row <- order(distance)[1:2]
 
         return(Q2a$year[row])
     }
@@ -42,7 +42,10 @@ knn_annual_to_monthly <- function(Q1, Q2, K) {
         #   v: a vector with 2 elements (year, Qa)
         # Returns a data frame (yaer, nn, month, Qm)
 
-        y     <- knn1(v['Qa'])       # nearest neighbour selected
+        y.nn     <- knn1(v['Qa'])       # nearest neighbour selected
+        #cat(y.nn)
+        if(v['year']!=y.nn[1]) y <- y.nn[1] else y <- y.nn[2]
+
         index <- Q2$index[Q2$year==y]  # copy index
         q1    <- v['Qa'] * index       # calculate monthly flow
 
