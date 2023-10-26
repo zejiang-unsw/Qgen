@@ -9,7 +9,7 @@ output:
     highlight: tango
     number_section: false
 geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('ALL_GCM_r100'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_GCM_r100'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
 editor_options: 
   chunk_output_type: console
 ---
@@ -29,10 +29,11 @@ op <- par() # save original par
 
 nensemble <- 100
 flag.sel <- switch(1, "ALL","NPRED","WASP"); flag.sel
-flag.ver <- switch(2, "","_v1","_v2")
+flag.ver <- switch(1, "","_v1","_v2")
 
 # Demo station
 station_id <- "Q5"
+mod_id <- c(1:6)[1] # GCM realization
 
 #flag.save <- F
 font_family <- "serif"
@@ -41,11 +42,11 @@ size_text <- 20
 
 # Places the float at precisely the location in the pandoc code. 
 # Requires the float package. "H" is somewhat equivalent to "h!".
-knitr::opts_chunk$set(echo = TRUE, include=TRUE, collapse = TRUE, comment = "#>", 
+knitr::opts_chunk$set(echo = FALSE, include=TRUE, collapse = TRUE, comment = "#>", 
                       message = FALSE, warning = FALSE,
                       
-                      #fig.path = paste0("figure/","-",flag.sel,flag.ver,"-"), 
-                      dev = "jpeg", dpi=500, out.width = '85%',
+                      fig.path = paste0("figure/",flag.sel,flag.ver,"-"), 
+                      dev = "jpeg", dpi=300, #out.width = '85%',
           					  fig.height = 9, fig.width = 9,
           					  fig.align='center', fig.pos="h!")
 
@@ -89,9 +90,9 @@ date_Qobs <- as.Date(paste(Qmon_obs[,1],Qmon_obs[,2],"1", sep="-"))
 range(date_Qobs)
 
 # simulated monthly & daily
-path.out <- paste0(station_id,"/") 
-load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,"_hist",flag.ver,".Rdat")) # Qsim_mon
-load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,"_hist",flag.ver,".Rdat")) # Qsim_day
+path.out <- paste0(station_id,"/cli_mod_hist/mod_",mod_id,"/") 
+load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_mon
+load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_day
 summary(Qsim_mon[[1]])
 
 # merage
@@ -128,7 +129,8 @@ gcms <- c("hist","rcp85_near", "rcp85_far")
 for(i in 1:length(gcms)) {
   flag.gcm <- gcms[i]
   print(flag.gcm)
-  Qsim_mon <- get(load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,"_",flag.gcm,flag.ver,".Rdat"))) 
+  path.out <- paste0(station_id,"/cli_mod_",flag.gcm,"/mod_",mod_id,"/")
+  Qsim_mon <- get(load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,".Rdat"))) 
   
   out.Qmon[[i]] <- rbindlist(Qsim_mon, idcol="group") %>% data.frame()
 }
@@ -176,12 +178,12 @@ p.mon.clim1 <- ggplot(x.mon.mean_r1, aes(x=factor(month), y=sim, fill=gcm)) +
         legend.title=element_blank()
   )
 
-p.mon.clim1 %>% print()
+#p.mon.clim1 %>% print()
 ```
 
 # Storage change 
 
-```{r storage, fig.height = 9, fig.width = 12}
+```{r storage, fig.height = 5, fig.width = 12}
 # Calculate storage statistics for current flows----------------------------------->
 # (1,2) Maximum deficit volume (VDmax) and maximum deficit duration (DDmax) for Q < Qlow
 Qmon <- Qmon_obs$Qm[ind_mon]
@@ -201,8 +203,8 @@ for(i_gcm in 2:length(gcms)) {
   Qmon1 <- dplyr::select(Qsim_mon,!nn) %>% spread(group, Qm) %>% dplyr::select(!c(year,month)) %>%
     as.matrix()
 
-  sc <- array(NA, dim=c(nrea,6))    # storage characteristics (dim: 'nrea' realisations, 6 characteristics)
-
+  # storage characteristics (dim: 'nrea' realisations, 6 characteristics)
+  sc <- array(NA, dim=c(ncol(Qmon1),6))    
 
   # Calculate storage statistics for SIM flow------------------------------------>
   s.gcm <- storage(Qmon, Qmon1)
@@ -241,9 +243,10 @@ sc.plot1$group <- factor(sc.plot1$group, levels= c("VD","DD","VS","DS","SM","LDP
 summary(sc.plot1)
 p.sc <- ggplot(subset(sc.plot1,gcm!="hist"), aes(x=group, y=sc, color=gcm)) +
 
-  geom_boxplot(position = position_dodge(width = 1)) +
+  #geom_boxplot(position = position_dodge(width = 1)) +
   #stat_boxplot(geom ='errorbar')+
-  stat_summary(fun=mean, geom="point", shape=17, size=5,position = position_dodge(width = 1)) +
+  #stat_summary(fun=mean, geom="point", shape=17, size=5,position = position_dodge(width = 1)) +
+  stat_summary(fun=mean, geom="point", shape=17, size=5) + 
 
   geom_abline(slope=0,intercept=1, color="black") +
 
@@ -263,18 +266,18 @@ p.sc <- ggplot(subset(sc.plot1,gcm!="hist"), aes(x=group, y=sc, color=gcm)) +
         # strip.placement = "outside",
 
         #legend.position = "right",
-        legend.position = c(.2,.9),
+        legend.position = c(.3,.9),
         legend.direction = c("horizontal","vertical")[1],
         legend.background = element_rect(fill="transparent"),
         legend.title=element_blank()
   )
-p.sc
+#p.sc %>% print()
 
 fig <- cowplot::plot_grid(p.mon.clim1,p.sc, ncol=2, #labels=p.labels,
                           label_size=12,
                           label_fontfamily = "serif",
                           label_fontface = "bold",
                           label_colour = "black")
-#fig 
+fig 
 ```
 

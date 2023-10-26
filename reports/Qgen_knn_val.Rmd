@@ -9,7 +9,7 @@ output:
     highlight: tango
     number_section: false
 geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('ALL_r100_val_v2'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_r20_val'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
 editor_options: 
   chunk_output_type: console
 ---
@@ -25,12 +25,13 @@ library(rmarkdown)
 
 # Global parameters
 op <- par() # save original par
-nensemble <- 100
+nensemble <- 20
 
 #val.st <- 1971; val.end <- 2000 # validation period
 #val.st <- 1951; val.end <- 2017 # validation period
-flag.ver <- switch(3, "","_v1","_v2")
-flag.sel <- switch(1, "ALL","NPRED","WASP")
+flag.ver <- switch(1, "","_v1","_v2")
+flag.sel <- switch(2, "ALL","NPRED","WASP")
+
 
 #flag.save <- F
 font_family <- "serif"
@@ -42,7 +43,7 @@ station_id <- "Q5"
 
 # Places the float at precisely the location in the pandoc code. 
 # Requires the float package. "H" is somewhat equivalent to "h!".
-knitr::opts_chunk$set(echo = TRUE, include=TRUE, collapse = TRUE, comment = "#>", 
+knitr::opts_chunk$set(echo = FALSE, include=TRUE, collapse = TRUE, comment = "#>", 
                       message = FALSE, warning = FALSE,
                       
                       #fig.path = paste0("figure/",flag.sel,flag.ver,"-"), 
@@ -90,11 +91,10 @@ date_Qobs <- as.Date(paste(Qmon_obs[,1],Qmon_obs[,2],"1", sep="-"))
 range(date_Qobs)
 
 # simulated monthly & daily
-path.out <- paste0(station_id,"/") 
+path.out <- paste0(station_id,"/cli_obs/") 
 load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,"_val",flag.ver,".Rdat")) # Qsim_mon
 load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,"_val",flag.ver,".Rdat")) # Qsim_day
 summary(Qsim_mon[[1]])
-
 
 # merge
 Qmon_obs1 <- Qmon_obs %>% rename("obs"="Qm")

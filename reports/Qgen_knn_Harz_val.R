@@ -1,6 +1,8 @@
 #==============================================================================#
 rm(list=ls()); graphics.off() # clear environment and graphics
 
+setwd("~/OneDrive - UNSW/Stochastic_Simulation/Qgen")
+
 # load package----
 library(scales)
 library(zoo)
@@ -23,14 +25,14 @@ library(Qgen)
 #==============================================================================#
 # global variables----
 flag.save <- T # save the Qsim or not
-
+op <- par()
 set.seed(20230607)
-nensemble <- 100 # must larger than 1 for knn bootstrap
+nensemble <- 20 # must larger than 1 for knn bootstrap
 
 #v0 only val for  # v1 out of val # v2 number of k in disaggregation
-flag.ver <- switch(3,"","_v1","_v2")
+flag.ver <- switch(1,"","_v1","_v2")
 
-flag.sel <- switch(1, "ALL","NPRED","WASP") # predictor selection method
+flag.sel <- switch(2, "ALL","NPRED","WASP") # predictor selection method
 dpi_fig <- switch(1, 300, 500) # result quick check
 #val.st <- 1971; val.end <- 2000 # validation period
 val.st <- 1951; val.end <- 2017 # validation period
@@ -43,8 +45,8 @@ time.st <- Sys.time()
 station_id <- "Q5"
 data("Harz_obs_Q")
 
-# make sure the complete year
-Qday <- Harz_obs_Q[[station_id]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval") %>% subset(year>=1926&year<=2020)
+Qday <- Harz_obs_Q[[station_id]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval") %>%
+  subset(year>=1926&year<=2020) # make sure the complete year for resamping
 head(Qday)
 tail(Qday)
 Qmon <- aggregate(Qd~year+month, Qday, FUN = mean) %>% rename("Qm"="Qd") %>% arrange(year,month)
@@ -82,7 +84,13 @@ ind_Qobs1 <- which(date_Qobs %in% date_cli)
 ind_cli <-  which(date_cli %in% date_val)
 
 # output----
-path.out <- paste0("reports/",station_id,"/")
+path.out <- paste0("reports/",station_id,"/cli_obs/")
+
+if (!dir.exists(path.out)){
+  dir.create(path.out, recursive = T)
+} else {
+  print("Dir already exists!")
+}
 #==============================================================================#
 # predictor selection----
 n_lag <- 3; mv <- 12
@@ -107,11 +115,11 @@ if(flag.sel=="NPRED"){
   out <- WASP::stepwise.VT(list(x=x, dp=py), wf="haar", mode="MODWT",J=5)
   #out <- WASP::stepwise.VT(list(x=x, dp=py), wf="d4", mode="MRA", J=5)
 } else if(flag.sel=="ALL"){
-  out <- list(cpy=1:ncol(py), wt=rep(1, ncol(py)))
+  #out <- list(cpy=1:ncol(py), wt=rep(1, ncol(py)))
 
-  # cpy <- seq(1,by=5,length.out=ncol(pred.mat))
-  # wt <- rep(1, ncol(pred.mat))
-  # out <- list(cpy=cpy, wt=wt)
+  cpy <- seq(1,by=5,length.out=ncol(pred.mat))
+  wt <- rep(1, ncol(pred.mat))
+  out <- list(cpy=cpy, wt=wt)
 }
 
 if(is.null(out$cpy)){
@@ -262,7 +270,7 @@ ggsave(paste0(path.out,"Figure_",flag.sel,"_sea_clim",flag.ver,".jpg"),
        width = 9, height = 7, dpi=dpi_fig)
 
 ## detrend and deseason----
-x_n <- deseason_trend(x, 12, do.plot = T)
+x_n <- deseason_trend(x, 12, do.plot = F)
 x.boot_n <- apply(x.boot, 2, function(vec) deseason_trend(vec, 12, do.plot = F))
 
 ## month-to-month correlation----
@@ -421,9 +429,16 @@ k <- floor(0.5 + 3 * sqrt(length(unique(Qmon1$year))));k
 Qsim_mon <- lapply(1:nensemble, function(i) knn_annual_to_monthly(Qsim_year[,c(1,i+1)], Qmon1, K=k))
 #summary(Qsim_mon)
 
+# overview
+year.target <- Qsim_mon[[1]]$year
+year.sample <- Qsim_mon[[1]]$nn
+
+#plot(year.target, year.sample)
+sum(year.sample==year.target) %>% print()
+
 #==============================================================================#
 # Daily Disaggregation----
-Qsim_year <- Qmon_sim[,.(value=mean(sim)),by=c("year","group")] %>% spread(group, value) %>% data.frame()
+Qsim_year <- Qmon_sim[,.(value=mean(sim)),by=c("group","year")] %>% spread(group, value) %>% data.frame()
 summary(Qsim_year)
 
 if(flag.ver!=""){
@@ -433,10 +448,26 @@ if(flag.ver!=""){
 }
 summary(Qday1)
 
+if(TRUE){
 k <- floor(0.5 + 3 * sqrt(length(unique(Qday1$year))));k
 Qsim_day <- lapply(1:nensemble, function(i) knn_annual_to_daily(Qsim_year[,c(1,i+1)], Qday1, K=k))
-#summary(Qsim_day)
+summary(Qsim_day)
 
+} else {
+  Qsim_mon1 <- Qmon_sim[,.(value=mean(sim)),by=c("group","year","month")] %>% spread(group, value) %>% data.frame()
+summary(Qsim_mon1)
+
+k <- floor(0.5 + 3 * sqrt(length(unique(Qday1$year))));k
+Qsim_day <- lapply(1:nensemble, function(i) knn_monthly_to_daily(Qsim_mon1[,c(1:2,i+2)], Qday1, K=k))
+
+}
+
+
+# overview
+year.target <- Qsim_day[[1]]$year
+year.sample <- Qsim_day[[1]]$nn
+
+sum(year.sample==year.target) %>% print()
 
 #==============================================================================#
 (Sys.time() - time.st) %>% print()

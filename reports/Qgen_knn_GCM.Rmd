@@ -89,9 +89,9 @@ date_Qobs <- as.Date(paste(Qmon_obs[,1],Qmon_obs[,2],"1", sep="-"))
 range(date_Qobs)
 
 # simulated monthly & daily
-path.out <- paste0(station_id,"/") 
-load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,"_hist",flag.ver,".Rdat")) # Qsim_mon
-load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,"_hist",flag.ver,".Rdat")) # Qsim_day
+path.out <- paste0(station_id,"/cli_hist/") 
+load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_mon
+load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_day
 summary(Qsim_mon[[1]])
 
 # merage
@@ -806,7 +806,9 @@ gcms <- c("hist","rcp85_near", "rcp85_far")
 for(i in 1:length(gcms)) {
   flag.gcm <- gcms[i]
   print(flag.gcm)
-  Qsim_mon <- get(load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,"_",flag.gcm,flag.ver,".Rdat"))) 
+  
+  path.out <- paste0("reports/",station_id,"/cli_mod",flag.gcm,"/mod_",mod_id,"/")
+  Qsim_mon <- get(load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,"_",flag.ver,".Rdat"))) 
   
   out.Qmon[[i]] <- rbindlist(Qsim_mon, idcol="group") %>% data.frame()
 }
