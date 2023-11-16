@@ -23,14 +23,14 @@ library(Qgen)
 #==============================================================================#
 # global variables----
 set.seed(20230607)
-mod_id <- c(1:6)[1] # GCM realization
+mod_id <- 7 # GCM realization: 1-6 is raw, and 7 is the sampled scenario
 station_id <- "Q5" # station
 nensemble <- 100 # must larger than 1 for knn bootstrap
 
 flag.save <- T # save the Qsim or not
 
 flag.ver <- switch(1, "","_v1","_v2")
-flag.sel <- switch(1, "ALL","NPRED","WASP") # predictor selection method
+flag.sel <- switch(2, "ALL","NPRED","WASP") # predictor selection method
 
 #flag.gcm <- switch (1,"_hist","_rcp85_near", "_rcp85_far")
 gcms <- c("_hist","_rcp85_near", "_rcp85_far")

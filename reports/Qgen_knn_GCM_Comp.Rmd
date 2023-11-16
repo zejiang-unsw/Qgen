@@ -28,12 +28,12 @@ library(rmarkdown)
 op <- par() # save original par
 
 nensemble <- 100
-flag.sel <- switch(1, "ALL","NPRED","WASP"); flag.sel
+flag.sel <- switch(2, "ALL","NPRED","WASP"); flag.sel
 flag.ver <- switch(1, "","_v1","_v2")
 
 # Demo station
 station_id <- "Q5"
-mod_id <- c(1:6)[1] # GCM realization
+mod_id <- 7 # GCM realization: 1-6 is raw, and 7 is the sampled scenario
 
 #flag.save <- F
 font_family <- "serif"
@@ -45,7 +45,7 @@ size_text <- 20
 knitr::opts_chunk$set(echo = FALSE, include=TRUE, collapse = TRUE, comment = "#>", 
                       message = FALSE, warning = FALSE,
                       
-                      fig.path = paste0("figure/",flag.sel,flag.ver,"-"), 
+                      fig.path = paste0("figure/",flag.sel,flag.ver,"-",mod_id,"-"), 
                       dev = "jpeg", dpi=300, #out.width = '85%',
           					  fig.height = 9, fig.width = 9,
           					  fig.align='center', fig.pos="h!")

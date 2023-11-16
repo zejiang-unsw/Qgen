@@ -1,0 +1,283 @@
+---
+title: "Stochastic Streamflow Generation: A knn approach under a changing climate"
+author: "Ze Jiang"
+date: "`r Sys.Date()`"
+output: 
+  bookdown::html_document2:
+  #bookdown::pdf_document2:
+    toc: true
+    highlight: tango
+    number_section: false
+geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_GCM_r100_v2'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+editor_options: 
+  chunk_output_type: console
+---
+
+# Setup
+
+```{r setup, include=TRUE}
+# this could remove the params
+# rm(list=ls()); graphics.off() # clear environment and graphics
+library(knitr)
+#devtools::install_github(repo="haozhu233/kableExtra", ref="a6af5c0")
+library(kableExtra)
+library(rmarkdown)
+
+# Global parameters
+op <- par() # save original par
+
+nensemble <- 100
+flag.sel <- switch(2, "ALL","NPRED","WASP"); flag.sel
+flag.ver <- switch(1, "","_v1","_v2")
+
+# Demo station
+station_id <- "Q5_v2"
+mod_id <- 7 # GCM realization: 1-6 is raw, and 7 is the sampled scenario
+
+#flag.save <- F
+font_family <- "serif"
+size_base <- 16
+size_text <- 20
+
+# Places the float at precisely the location in the pandoc code. 
+# Requires the float package. "H" is somewhat equivalent to "h!".
+knitr::opts_chunk$set(echo = FALSE, include=TRUE, collapse = TRUE, comment = "#>", 
+                      message = FALSE, warning = FALSE,
+                      
+                      fig.path = paste0("figure/",flag.sel,flag.ver,"-",mod_id,"-"), 
+                      dev = "jpeg", dpi=300, #out.width = '85%',
+          					  fig.height = 9, fig.width = 9,
+          					  fig.align='center', fig.pos="h!")
+
+```
+
+# Required packages
+
+```{r packages, echo=TRUE, warning=FALSE}
+library(Qgen)
+
+library(lubridate)
+library(moments)
+library(ggplot2) 
+library(zoo)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(data.table)
+
+require(ggpubr) # ggplot2
+require(egg) # facet
+require(lemon) # facet
+
+```
+
+# Load data
+
+Observed streamflow (Q) and its conditional variables, Precipitation (P), Potential ET(PET), Temperature (T) as well as the water blance (P-PET). 
+
+```{r dat, message=FALSE}
+# obsvered Q
+data("Harz_obs_Q")
+
+Qday_obs <- Harz_obs_Q[["Q5"]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval")
+Qmon_obs <- aggregate(Qd~year+month, Qday_obs, FUN = mean) %>% rename("Qm"="Qd") %>% arrange(year,month)
+Qyr_obs <- stats::aggregate(Qd~year, Qday_obs, FUN = mean) %>% rename("Qa"="Qd") %>% arrange(year)
+
+head(Qmon_obs[,1:2])
+tail(Qmon_obs[,1:2])
+date_Qobs <- as.Date(paste(Qmon_obs[,1],Qmon_obs[,2],"1", sep="-"))
+range(date_Qobs)
+
+# simulated monthly & daily
+path.out <- paste0(station_id,"/cli_mod_hist/mod_",mod_id,"/") 
+load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_mon
+load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_day
+#summary(Qsim_mon[[1]])
+
+# merage
+Qmon_obs1 <- Qmon_obs %>% rename("obs"="Qm")
+Qmon_sim <- Qmon_sim %>% gather(group,Qm,3:(100+2)) %>% rename("sim"="Qm") %>% 
+    merge(Qmon_obs1, by=c("year","month"))  %>% 
+    mutate(season=cut(month, breaks=c(0, 3, 6, 9, 12), right = T, labels = c(1,2,3,4)))
+
+# dates of hist ----
+val.st <- 1971; val.end <- 2000
+date_year <- val.st:val.end 
+date_year - unique(Qmon_sim$year) #%>% range() # cross check
+
+date_mon <- seq(as.Date(paste(val.st,"1","1",sep="-")),
+                  as.Date(paste(val.end,"12","1",sep="-")),
+                  by="month")
+
+date_day <- seq(as.Date(paste(val.st,"1","1",sep="-")),
+                as.Date(paste(val.end,"12","31",sep="-")),
+                by="day")
+
+
+ind_yrs <- which(unique(Qmon_obs[,1]) %in% date_year)
+ind_mon <- which(date_Qobs %in% date_mon)
+ind_day <- which(paste0(Qday_obs[,1], Qday_obs[,2], Qday_obs[,3]) %in%
+                   paste0(year(date_day), month(date_day), day(date_day)))
+```
+
+# Seasonality change 
+
+```{r seasonality}
+out.Qmon <- list()
+gcms <- c("hist","rcp85_near", "rcp85_far")
+for(i in 1:length(gcms)) {
+  flag.gcm <- gcms[i]
+  print(flag.gcm)
+  path.out <- paste0(station_id,"/cli_mod_",flag.gcm,"/mod_",mod_id,"/")
+  load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,".Rdat"))
+  
+  out.Qmon[[i]] <- Qmon_sim %>% gather(group,Qm,3:(100+2))
+}
+names(out.Qmon) <- gcms
+
+summary(out.Qmon[[3]])
+
+x.mon.mean_r <- rbindlist(out.Qmon, idcol="gcm") %>% rename("sim"="Qm")
+x.mon.mean_r$gcm <- factor(x.mon.mean_r$gcm)
+
+x.mon.mean_r$gcm <- factor(x.mon.mean_r$gcm, levels=gcms)
+summary(x.mon.mean_r)
+
+#monthly average across years
+x.mon.mean_r1 <- x.mon.mean_r[,.(sim=mean(sim)),by=c("month","group","gcm")]
+
+summary(x.mon.mean_r1)
+
+p.mon.clim1 <- ggplot(x.mon.mean_r1, aes(x=factor(month), y=sim, fill=gcm)) +
+
+  geom_boxplot() +
+  #stat_boxplot(geom ='errorbar')+
+  #stat_summary(fun=mean, geom="point", shape=20, size=3, color="black") +
+  
+  scale_y_continuous(breaks = pretty_breaks()) +
+  scale_fill_manual(values=c("grey","blue","red")) +
+
+  labs(x="Month",y="Qmon[m3/s]",#title="Monthly Climatology",
+       color=NULL, fill=NULL) +
+  #guides(fill="none") +
+
+  theme_bw() +
+  theme(text = element_text(size = 16,face='bold',family="serif"),
+        plot.margin = unit(c(0.1,0.1,0.1, 0.1), "cm"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+
+        # strip.background = element_blank(),
+        # strip.placement = "outside",
+
+        #legend.position = "right",
+        legend.position = c(.6,.9),
+        legend.direction = c("horizontal","vertical")[1],
+        legend.background = element_rect(fill="transparent"),
+        legend.title=element_blank()
+  )
+
+#p.mon.clim1 %>% print()
+```
+
+# Storage change 
+
+```{r storage, fig.height = 5, fig.width = 12}
+# Calculate storage statistics for current flows----------------------------------->
+# (1,2) Maximum deficit volume (VDmax) and maximum deficit duration (DDmax) for Q < Qlow
+Qmon <- Qmon_obs$Qm[ind_mon]
+Qsim_mon <- out.Qmon[[1]]
+summary(Qmon)
+Qmon1 <- Qsim_mon %>% spread(group, Qm) %>% dplyr::select(!c(year,month)) %>%
+  as.matrix()
+s.hist <- storage(Qmon, Qmon1)
+
+out.storage <- list()
+for(i_gcm in 2:length(gcms)) {
+  flag.gcm <- gcms[i_gcm]
+  print(flag.gcm)
+  
+  Qsim_mon <- out.Qmon[[i_gcm]]
+  #summary(Qmon)
+  Qmon1 <- Qsim_mon %>% spread(group, Qm) %>% dplyr::select(!c(year,month)) %>%
+    as.matrix()
+
+  # storage characteristics (dim: 'nrea' realisations, 6 characteristics)
+  sc <- array(NA, dim=c(ncol(Qmon1),6))    
+
+  # Calculate storage statistics for SIM flow------------------------------------>
+  s.gcm <- storage(Qmon, Qmon1)
+  VDmax1 <- s.gcm$VD
+  DDmax1 <- s.gcm$DD
+  VSmax1 <- s.gcm$VS
+  DSmax1 <- s.gcm$DS  
+  SM1<- s.gcm$SM  
+  LDP1 <- s.gcm$LDP
+
+  # Plot storage capacities
+  # Box-Plot StDev monthly Q
+  sc[,1] <- VDmax1/s.hist$VD
+  sc[,2] <- DDmax1/s.hist$DD
+  sc[,3] <- VSmax1/s.hist$VS
+  sc[,4] <- DSmax1/s.hist$DS
+  sc[,5] <- SM1/s.hist$SM
+  sc[,6] <- LDP1/s.hist$LDP
+
+  sc.df <- data.frame(sc)
+  colnames(sc.df) <- c("VD","DD","VS","DS","SM","LDP")
+  out.storage[[i_gcm]] <- sc.df
+
+}
+names(out.storage) <- gcms
+
+sc.plot <- rbindlist(out.storage,idcol="gcm")
+sc.plot$gcm <- factor(sc.plot$gcm)
+sc.plot$gcm <- factor(sc.plot$gcm, levels=gcms)
+#summary(sc.plot)
+
+sc.plot1 <- sc.plot %>% gather(group,sc,2:7)
+sc.plot1$group <- factor(sc.plot1$group)
+sc.plot1$group <- factor(sc.plot1$group, levels= c("VD","DD","VS","DS","SM","LDP"))
+
+summary(sc.plot1)
+p.sc <- ggplot(subset(sc.plot1,gcm!="hist"), aes(x=group, y=sc, color=gcm)) +
+
+  #geom_boxplot(position = position_dodge(width = 1)) +
+  #stat_boxplot(geom ='errorbar')+
+  #stat_summary(fun=mean, geom="point", shape=17, size=5,position = position_dodge(width = 1)) +
+  stat_summary(fun=mean, geom="point", shape=17, size=5) + 
+
+  geom_abline(slope=0,intercept=1, color="black") +
+
+  scale_y_continuous(limits=c(0,2), breaks = pretty_breaks()) +
+  scale_color_manual(values=c("grey","blue","red")[2:3]) +
+
+  labs(x="Storage characteristics",y="Future/Past[-]",
+       color=NULL, fill=NULL) +
+
+  theme_bw() +
+  theme(text = element_text(size = 16,face='bold',family="serif"),
+        plot.margin = unit(c(0.1,0.1,0.1, 0.1), "cm"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+
+        # strip.background = element_blank(),
+        # strip.placement = "outside",
+
+        #legend.position = "right",
+        legend.position = c(.3,.9),
+        legend.direction = c("horizontal","vertical")[1],
+        legend.background = element_rect(fill="transparent"),
+        legend.title=element_blank()
+  )
+#p.sc %>% print()
+
+fig <- cowplot::plot_grid(p.mon.clim1,p.sc, ncol=2, #labels=p.labels,
+                          label_size=12,
+                          label_fontfamily = "serif",
+                          label_fontface = "bold",
+                          label_colour = "black")
+fig 
+```
+

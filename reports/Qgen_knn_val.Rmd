@@ -9,7 +9,7 @@ output:
     highlight: tango
     number_section: false
 geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_r20_val'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_r100_val_v1'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
 editor_options: 
   chunk_output_type: console
 ---
@@ -25,7 +25,7 @@ library(rmarkdown)
 
 # Global parameters
 op <- par() # save original par
-nensemble <- 20
+nensemble <- 100
 
 #val.st <- 1971; val.end <- 2000 # validation period
 #val.st <- 1951; val.end <- 2017 # validation period
@@ -39,7 +39,7 @@ size_base <- 16
 size_text <- 20
 
 # Demo station
-station_id <- "Q5"
+station_id <- "Q5_v2"
 
 # Places the float at precisely the location in the pandoc code. 
 # Requires the float package. "H" is somewhat equivalent to "h!".
@@ -81,7 +81,7 @@ Observed streamflow (Q) and its conditional variables, Precipitation (P), Potent
 # obsvered Q
 data("Harz_obs_Q")
 
-Qday_obs <- Harz_obs_Q[[station_id]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval")
+Qday_obs <- Harz_obs_Q[["Q5"]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval")
 Qmon_obs <- aggregate(Qd~year+month, Qday_obs, FUN = mean) %>% rename("Qm"="Qd") %>% arrange(year,month)
 Qyr_obs <- stats::aggregate(Qd~year, Qday_obs, FUN = mean) %>% rename("Qa"="Qd") %>% arrange(year)
 
@@ -537,7 +537,7 @@ par(ps="12",              # size
 plot(Qyr, type='s',lwd=2,col='blue', xlab='Zeit [Jahre]', ylab='Qyr OBS [m3/s]')    # plot annual time seris
 abline(a=mean(Qyr), b=0, col="black",lty=2)
 
-# Plot 1 realisation of SIM annual TS
+# Plot 1 realization of SIM annual TS
 plot(Qyr1[,1], type='s',lwd=2,col='blue', xlab='Zeit [Jahre]', ylab='Qyr SIM [m3/s]')    # plot annual time seris
 #line(Qyr1[,2], type='l', lwd=1, col='red')
 abline(a=mean(Qyr1[,2]), b=0, col="black",lty=2)

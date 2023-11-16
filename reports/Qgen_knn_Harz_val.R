@@ -27,12 +27,12 @@ library(Qgen)
 flag.save <- T # save the Qsim or not
 op <- par()
 set.seed(20230607)
-nensemble <- 20 # must larger than 1 for knn bootstrap
+nensemble <- 100 # must larger than 1 for knn bootstrap
 
 #v0 only val for  # v1 out of val # v2 number of k in disaggregation
 flag.ver <- switch(1,"","_v1","_v2")
 
-flag.sel <- switch(2, "ALL","NPRED","WASP") # predictor selection method
+flag.sel <- switch(1, "ALL","NPRED","WASP") # predictor selection method
 dpi_fig <- switch(1, 300, 500) # result quick check
 #val.st <- 1971; val.end <- 2000 # validation period
 val.st <- 1951; val.end <- 2017 # validation period
@@ -449,16 +449,22 @@ if(flag.ver!=""){
 summary(Qday1)
 
 if(TRUE){
-k <- floor(0.5 + 3 * sqrt(length(unique(Qday1$year))));k
-Qsim_day <- lapply(1:nensemble, function(i) knn_annual_to_daily(Qsim_year[,c(1,i+1)], Qday1, K=k))
-summary(Qsim_day)
+  k <- floor(0.5 + 3 * sqrt(length(unique(Qday1$year))));k
+  Qsim_day <- lapply(1:nensemble, function(i) knn_annual_to_daily(Qsim_year[,c(1,i+1)], Qday1, K=k))
+  summary(Qsim_day)
 
 } else {
-  Qsim_mon1 <- Qmon_sim[,.(value=mean(sim)),by=c("group","year","month")] %>% spread(group, value) %>% data.frame()
-summary(Qsim_mon1)
+  # Two option here: option 2 is better than the option 1 but both worse than the above one.
+#   Qsim_mon1 <- Qmon_sim[,.(value=mean(sim)),by=c("group","year","month")] %>% spread(group, value) %>% data.frame()
+#   summary(Qsim_mon1)
 
-k <- floor(0.5 + 3 * sqrt(length(unique(Qday1$year))));k
-Qsim_day <- lapply(1:nensemble, function(i) knn_monthly_to_daily(Qsim_mon1[,c(1:2,i+2)], Qday1, K=k))
+  Qsim_mon_df <- rbindlist(Qsim_mon, idcol="group") %>% rename("sim"="Qm")
+
+  Qsim_mon1 <- Qsim_mon_df[,.(value=mean(sim)),by=c("group","year","month")] %>% spread(group, value) %>% data.frame()
+  summary(Qsim_mon1)
+
+  k <- floor(0.5 + 3 * sqrt(length(unique(Qday1$year))));k
+  Qsim_day <- lapply(1:nensemble, function(i) knn_monthly_to_daily(Qsim_mon1[,c(1:2,i+2)], Qday1, K=k))
 
 }
 
@@ -482,3 +488,4 @@ if(flag.save){
   save(Qsim_day,file=paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,"_val",flag.ver,".Rdat"))
 
 }
+

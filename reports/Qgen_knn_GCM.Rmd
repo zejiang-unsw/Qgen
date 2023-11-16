@@ -9,7 +9,7 @@ output:
     highlight: tango
     number_section: false
 geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('ALL_GCM_r100_v1'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('ALL_GCM_r100_mod_7'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
 editor_options: 
   chunk_output_type: console
 ---
@@ -28,8 +28,9 @@ library(rmarkdown)
 op <- par() # save original par
 
 nensemble <- 100
+mod_id <- 7 # GCM realization: 1-6 is raw, and 7 is the sampled scenario
 flag.sel <- switch(1, "ALL","NPRED","WASP"); flag.sel
-flag.ver <- switch(2, "","_v1","_v2")
+flag.ver <- switch(1, "","_v1","_v2")
 
 # Demo station
 station_id <- "Q5"
@@ -89,7 +90,7 @@ date_Qobs <- as.Date(paste(Qmon_obs[,1],Qmon_obs[,2],"1", sep="-"))
 range(date_Qobs)
 
 # simulated monthly & daily
-path.out <- paste0(station_id,"/cli_hist/") 
+path.out <- paste0(station_id,"/cli_mod_hist/mod_",mod_id,"/")
 load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_mon
 load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_day
 summary(Qsim_mon[[1]])
@@ -807,8 +808,8 @@ for(i in 1:length(gcms)) {
   flag.gcm <- gcms[i]
   print(flag.gcm)
   
-  path.out <- paste0("reports/",station_id,"/cli_mod",flag.gcm,"/mod_",mod_id,"/")
-  Qsim_mon <- get(load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,"_",flag.ver,".Rdat"))) 
+  path.out <- paste0(station_id,"/cli_mod_",flag.gcm,"/mod_",mod_id,"/")
+  Qsim_mon <- get(load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,".Rdat"))) 
   
   out.Qmon[[i]] <- rbindlist(Qsim_mon, idcol="group") %>% data.frame()
 }
