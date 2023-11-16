@@ -14,6 +14,8 @@ rm(list=ls()); graphics.off() # clear environment and graphics
 library(dplyr)
 library(tidyr)
 
+set.seed(2023-10-30)
+
 flag.save <- T
 
 ## Observed data----
@@ -47,27 +49,43 @@ names(Harz_obs_Q) <- stn_list
 #if(flag.save) save(Harz_obs_Q, file=paste0("data/Harz_obs_Q.Rdat"))
 usethis::use_data(Harz_obs_Q, overwrite = TRUE)
 
-## GCM hist----
-
+## GCM hist&fut----
 for(model in c("hist","rcp85")){
-# conditional predictor
-path.hist <- paste0("data-raw/Harz-Data/cli_mod_",model,"/")
+  # model <- "hist"
+  # conditional predictor
+  path.hist <- paste0("data-raw/Harz-Data/cli_mod_",model,"/")
 
-Harz_gcm <- NULL
-for(i_mod in 1:6){
+  Harz_gcm <- NULL
+  for(i_mod in 1:6){
 
-  #i_mod <- 1
-  etp1 <- get(load(paste0(path.hist,"Emon_mod_",i_mod,".RDat")))
-  pcp1 <- get(load(paste0(path.hist,"Pmon_mod_",i_mod,".RDat")))
-  tav1 <- get(load(paste0(path.hist,"Tmon_mod_",i_mod,".RDat")))
-  glo1 <- get(load(paste0(path.hist,"Gmon_mod_",i_mod,".RDat")))
-  head(pcp1[,1:2]) %>% print()
-  tail(pcp1[,1:2]) %>% print()
+    #i_mod <- 1
+    etp1 <- get(load(paste0(path.hist,"Emon_mod_",i_mod,".RDat")))
+    pcp1 <- get(load(paste0(path.hist,"Pmon_mod_",i_mod,".RDat")))
+    tav1 <- get(load(paste0(path.hist,"Tmon_mod_",i_mod,".RDat")))
+    glo1 <- get(load(paste0(path.hist,"Gmon_mod_",i_mod,".RDat")))
+    head(pcp1[,1:2]) %>% print()
+    tail(pcp1[,1:2]) %>% print()
 
-  Harz_gcm[[i_mod]] <- list(Pmon=pcp1,Tmon=tav1,Emon=etp1,Gmon=glo1)
+    Harz_gcm[[i_mod]] <- list(Pmon=pcp1,Tmon=tav1,Emon=etp1,Gmon=glo1)
 
-}
+  }
 
-if(flag.save) save(Harz_gcm, file=paste0("data/Harz_",model,"_mon.Rdat"))
-usethis::use_data(Harz_gcm, overwrite = TRUE)
+
+  # composite
+  samp_ind <- sapply(1:nrow(pcp1), function(i) sample(1:length(Harz_gcm),size=1))
+
+  mod_list <- list()
+  var_list <- c("Pmon","Tmon","Emon","Gmon")
+  for(i in 1:length(var_list)){
+    tmp_mat <- sapply(Harz_gcm, function(ls) ls[[i]][[var_list[i]]])
+    tmp <- sapply(1:nrow(pcp1), function(j) tmp_mat[j, samp_ind[j]])
+
+    mod_list[[var_list[i]]] <- data.frame(year=pcp1$year, mon=pcp1$mon, tmp)
+  }
+
+  Harz_gcm[[i_mod+1]] <- mod_list
+
+
+  if(flag.save) save(Harz_gcm, file=paste0("data/Harz_",model,"_mon.Rdat"))
+  usethis::use_data(Harz_gcm, overwrite = TRUE)
 }

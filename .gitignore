@@ -2,6 +2,7 @@ data-raw/Harz-Data/
 reports/figure/
 reports/*Rdat
 reports/Q5
+reports/Q5_v2
 reports/*html
 inst/
 
