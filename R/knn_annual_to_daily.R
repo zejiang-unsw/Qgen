@@ -1,14 +1,17 @@
 #' Annual to daily disaggregation
 #'
 #' Disaggregate Q1 by sampling from Q2 using (modified) k-nearest-neighbour resampling (Nowalk et al, 2010).
+#'
 #' @param Q1 An annual dataframe (year, Qa).
 #' @param Q2 A daily dataframe (year, month, day, Qd).
 #' @param K Number of nearest neighbours.
+#' @param flag logic value if same year can be sampled for leave out cross validation.
+#'
 #' @return A data frame (year, nn, month, day, Qd) (nn for the sampled one of the k nearest neighbours).
 #' @references Nowak, K., J. Prairie, B. Rajagopalan, and U. Lall (2010), A nonparametric stochastic approach for multisite disaggregation of annual to daily streamflow, Water Resour. Res., 46, W08529, doi:10.102/2009WR008530.
 #' @export
 #' @import lubridate
-knn_annual_to_daily <- function(Q1, Q2, K) {
+knn_annual_to_daily <- function(Q1, Q2, K, flag=TRUE) {
     colnames(Q1) <- c('year', 'Qa')
     # Incomplete years are not sampled
     Q2a <- Q2 %>% group_by(year) %>% summarise(Qa = mean(Qd)) %>% ungroup() %>% dplyr::filter(!is.na(Qa))
@@ -41,7 +44,11 @@ knn_annual_to_daily <- function(Q1, Q2, K) {
 
         y.nn     <- knn1(v['Qa'])       # nearest neighbour selected
         #cat(y.nn)
-        if(v['year']!=y.nn[1]) y <- y.nn[1] else y <- y.nn[2]
+        if(flag){
+          y <- y.nn[1]
+        } else {
+          if(v['year']!=y.nn[1]) y <- y.nn[1] else y <- y.nn[2]
+        }
         Q.sub <- dplyr::filter(Q2, year == y)
         #print(Q.sub)
 

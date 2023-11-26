@@ -4,7 +4,7 @@
 \alias{knn_annual_to_daily}
 \title{Annual to daily disaggregation}
 \usage{
-knn_annual_to_daily(Q1, Q2, K)
+knn_annual_to_daily(Q1, Q2, K, flag = TRUE)
 }
 \arguments{
 \item{Q1}{An annual dataframe (year, Qa).}
@@ -12,6 +12,8 @@ knn_annual_to_daily(Q1, Q2, K)
 \item{Q2}{A daily dataframe (year, month, day, Qd).}
 
 \item{K}{Number of nearest neighbours.}
+
+\item{flag}{logic value if same year can be sampled for leave out cross validation.}
 }
 \value{
 A data frame (year, nn, month, day, Qd) (nn for the sampled one of the k nearest neighbours).

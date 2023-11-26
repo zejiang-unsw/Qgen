@@ -5,7 +5,7 @@
 #' @inherit knn_annual_to_daily return
 #' @inherit knn_annual_to_daily references
 #' @export
-knn_annual_to_monthly <- function(Q1, Q2, K) {
+knn_annual_to_monthly <- function(Q1, Q2, K, flag=TRUE) {
     # Disaggregate Q1 by sampling from Q2 using (modified) knn resampling (Nowalk et al)
     # Arguments
     #   Q1: an annual dataframe (year, Qa)
@@ -44,7 +44,11 @@ knn_annual_to_monthly <- function(Q1, Q2, K) {
 
         y.nn     <- knn1(v['Qa'])       # nearest neighbour selected
         #cat(y.nn)
-        if(v['year']!=y.nn[1]) y <- y.nn[1] else y <- y.nn[2]
+        if(flag){
+          y <- y.nn[1]
+        } else {
+          if(v['year']!=y.nn[1]) y <- y.nn[1] else y <- y.nn[2]
+        }
 
         index <- Q2$index[Q2$year==y]  # copy index
         q1    <- v['Qa'] * index       # calculate monthly flow
