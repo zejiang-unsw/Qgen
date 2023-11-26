@@ -9,7 +9,7 @@ output:
     highlight: tango
     number_section: false
 geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_r100_Pseudo_A_v3'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_GCM_r100_val_A_v2'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
 editor_options: 
   chunk_output_type: console
 ---
@@ -20,33 +20,33 @@ editor_options:
 # this could remove the params
 # rm(list=ls()); graphics.off() # clear environment and graphics
 library(knitr)
+#devtools::install_github(repo="haozhu233/kableExtra", ref="a6af5c0")
 library(kableExtra)
 library(rmarkdown)
 
 # Global parameters
 op <- par() # save original par
-nensemble <- 100
 
-#val.st <- 1971; val.end <- 2000 # validation period
-#val.st <- 1951; val.end <- 2017 # validation period
-flag.ver <- switch(3, "","_v1","_v2")
-flag.sel <- switch(2, "ALL","NPRED","WASP")
+nensemble <- 100
+#mod_id <- 7 # GCM realization: 1-6 is raw, and 7 is the sampled scenario
+flag.sel <- switch(2, "ALL","NPRED","WASP"); flag.sel
+flag.ver <- switch(1, "","_v1","_v2")
+flag.val <- switch (1,"_A","_D")
+
+# Demo station
+station_id <- "Q5_v2"
 
 #flag.save <- F
 font_family <- "serif"
 size_base <- 16
 size_text <- 20
 
-# Demo station
-station_id <- "Q5"
-mod_id <- 7
-
 # Places the float at precisely the location in the pandoc code. 
 # Requires the float package. "H" is somewhat equivalent to "h!".
 knitr::opts_chunk$set(echo = FALSE, include=TRUE, collapse = TRUE, comment = "#>", 
                       message = FALSE, warning = FALSE,
                       
-                      #fig.path = paste0("figure/",flag.sel,flag.ver,"-"), 
+                      #fig.path = paste0("figure/","-",flag.sel,flag.ver,"-"), 
                       dev = "jpeg", dpi=500, out.width = '85%',
           					  fig.height = 9, fig.width = 9,
           					  fig.align='center', fig.pos="h!")
@@ -91,9 +91,11 @@ date_Qobs <- as.Date(paste(Qmon_obs[,1],Qmon_obs[,2],"1", sep="-"))
 range(date_Qobs)
 
 # simulated monthly & daily
-path.out <- paste0(station_id,"/cli_mod_pseudo_A/")#,"/mod_",mod_id,"/")
+path.out <- paste0(station_id,"/cli_val", flag.val, "/")#mod_",mod_id,"/")
 load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_mon
 load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_day
+Qsim_mon <- Qmon_sim %>% gather(group,Qm,3:(100+2)) %>% group_split(group, keep = F)  
+Qsim_day <- Qday_sim %>% gather(group,Qd,4:(100+3)) %>% group_split(group, keep = F)  
 summary(Qsim_mon[[1]])
 
 # merge
@@ -102,11 +104,15 @@ Qmon_sim <- rbindlist(Qsim_mon, idcol="group") %>% rename("sim"="Qm") %>%
     merge(Qmon_obs1, by=c("year","month"))  %>% 
     mutate(season=cut(month, breaks=c(0, 3, 6, 9, 12), right = T, labels = c(1,2,3,4)))
 
-# dates----
-date_year <- unique(Qsim_mon[[1]]$year) #
-date_year%>% range() # cross check
+# dates of hist ----
+if(flag.val=="_A"){
+  val.st <- 1971; val.end <- 1990
+} else {
+  val.st <- 1998; val.end <- 2017
+}
+date_year <- val.st:val.end 
+(date_year - unique(Qsim_mon[[1]]$year)) %>% print() # cross check
 
-val.st <- date_year[1]; val.end <- date_year[length(date_year)]
 date_mon <- seq(as.Date(paste(val.st,"1","1",sep="-")),
                   as.Date(paste(val.end,"12","1",sep="-")),
                   by="month")
@@ -115,6 +121,7 @@ date_day <- seq(as.Date(paste(val.st,"1","1",sep="-")),
                 as.Date(paste(val.end,"12","31",sep="-")),
                 by="day")
 
+Qday_obs <- Qday_obs[!(Qday_obs$day == 29 & Qday_obs$month == 2), ]    
 
 ind_yrs <- which(unique(Qmon_obs[,1]) %in% date_year)
 ind_mon <- which(date_Qobs %in% date_mon)
@@ -135,6 +142,7 @@ year=Qmon_obs$year[ind_mon]
 
 # SIM input
 Qmon1 <- sapply(Qsim_mon, function(ls) ls$Qm)
+#summary(Qmon1)
 mon1=mon
 year1=year
 
@@ -206,7 +214,6 @@ for (i in 1:12) {
 # Lag-1 autocorrelation per month for OBS & SIM
 Qcor <- ac1mon(matrix(Qmon, ncol=12, byrow=T))
 for (j in 1:nrea) { Qcor1[j,1:12]=ac1mon(matrix(Qmon1[,j], ncol=12,byrow=T))}
-
 
 # ACF OBS & SIM 20 lags for summer and winter
 Qacf_su <- acf(Qmon[mon>4 & mon<11], plot=FALSE)$acf[2:16]    # OBS summer
@@ -344,6 +351,7 @@ lines(apply(Qacf1_wi,2,mean),col='black',lwd=2,lty=2)
 abline(a=0, b=0, col="black",lty=2)
 
 #if(flag.save) dev.off()
+
 par(op)
 ```
 
@@ -387,10 +395,10 @@ summary(Qmon_obs)
 
 #monthly average across years
 x.mon.mean_r <- Qmon_sim[,.(sim=mean(sim), obs=mean(obs)),by=c("month","group")]
-summary(x.mon.mean_r)
+#summary(x.mon.mean_r)
 
 x.mon.obs <- aggregate(Qm~month, Qmon_obs, FUN=mean) 
-summary(x.mon.obs)
+#summary(x.mon.obs)
 
 p.mon.clim1 <- ggplot(x.mon.mean_r,aes(x=factor(month), y=sim)) +
 
@@ -428,11 +436,9 @@ p.mon.clim1 %>% print()
 ## Seasonal Climatology 
 
 ```{r fig-sea-clim, fig.width=9, fig.height=7}
-## Seasonal climatology
-
 #average across years
 x.ses.mean_r <- Qmon_sim[,.(sim=mean(sim), obs=mean(obs)),by=c("season","group")]
-summary(x.mon.mean_r)
+#summary(x.mon.mean_r)
 
 p.sea.clim1 <- ggplot(x.ses.mean_r,aes(x=factor(season), y=sim)) +
 
@@ -477,7 +483,6 @@ Qyr <- Qyr_obs$Qa[ind_yrs]
 Qyr1 <- Qmon_sim[,.(value=mean(sim)),by=c("year","group")] %>% spread(group, value) %>% 
   dplyr::select(!c(year)) %>% as.matrix()
 #summary(Qyr1)
-
 #------------------------------------------------------------------------#
 # OBS initialisations
 Qm <- numeric(length=1)    # mean
@@ -539,7 +544,7 @@ par(ps="12",              # size
 plot(Qyr, type='s',lwd=2,col='blue', xlab='Zeit [Jahre]', ylab='Qyr OBS [m3/s]')    # plot annual time seris
 abline(a=mean(Qyr), b=0, col="black",lty=2)
 
-# Plot 1 realization of SIM annual TS
+# Plot 1 realisation of SIM annual TS
 plot(Qyr1[,1], type='s',lwd=2,col='blue', xlab='Zeit [Jahre]', ylab='Qyr SIM [m3/s]')    # plot annual time seris
 #line(Qyr1[,2], type='l', lwd=1, col='red')
 abline(a=mean(Qyr1[,2]), b=0, col="black",lty=2)
@@ -565,7 +570,7 @@ lines(apply(Qacf1,2,mean),col='black',lwd=2,lty=2)
 #if(flag.save) dev.off()
 ```
 
-# Daily
+# Daily 
 
 ## Caculate statistics
 
@@ -575,7 +580,6 @@ lines(apply(Qacf1,2,mean),col='black',lwd=2,lty=2)
 Qday <- Qday_obs$Qd[ind_day]
 mon <- Qday_obs$mon[ind_day]
 #summary(Qday)
-
 # SIM input
 Qday1 <- sapply(Qsim_day, function(ls) ls$Qd)
 mon1 <- mon
@@ -701,6 +705,7 @@ points(Qsk,pch=4,col="red",lwd=2)         # add obs mean value as red cross
 boxplot(Qcor1, range=0, col = "lightblue", #ylim=c(0.5,1),
         xlab='Month', ylab='Lag-1 Corr [-]')   # grouped by month
 points(Qcor,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
 
 #if(flag.save) dev.off()
 ```

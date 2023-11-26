@@ -9,7 +9,7 @@ output:
     highlight: tango
     number_section: false
 geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_r100_Pseudo_v3'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_r100_Pseudo_gcm_v2'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
 editor_options: 
   chunk_output_type: console
 ---
@@ -29,7 +29,7 @@ nensemble <- 100
 
 #val.st <- 1971; val.end <- 2000 # validation period
 #val.st <- 1951; val.end <- 2017 # validation period
-flag.ver <- switch(4, "","_v1","_v2","_v3")
+flag.ver <- switch(3, "","_v1","_v2","_v3")
 flag.sel <- switch(2, "ALL","NPRED","WASP")
 
 #flag.save <- F
