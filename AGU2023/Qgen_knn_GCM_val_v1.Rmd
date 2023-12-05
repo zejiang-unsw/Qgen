@@ -1,0 +1,809 @@
+---
+title: "Stochastic Streamflow Generation: A knn approach under a changing climate"
+author: "Ze Jiang"
+date: "`r Sys.Date()`"
+output: 
+  bookdown::html_document2:
+  #bookdown::pdf_document2:
+    toc: true
+    highlight: tango
+    number_section: false
+geometry: "left=3cm,right=3cm,top=2cm,bottom=2cm"
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), paste0('NPRED_r100_val_D_v1'))) }) #,format(Sys.time(),"%Y-%m-%d %H %M")))) })
+editor_options: 
+  chunk_output_type: console
+---
+
+# Setup
+
+```{r setup, include=TRUE}
+# this could remove the params
+# rm(list=ls()); graphics.off() # clear environment and graphics
+library(knitr)
+#devtools::install_github(repo="haozhu233/kableExtra", ref="a6af5c0")
+library(kableExtra)
+library(rmarkdown)
+
+# Global parameters
+op <- par() # save original par
+
+nensemble <- 100
+#mod_id <- 7 # GCM realization: 1-6 is raw, and 7 is the sampled scenario
+flag.sel <- switch(2, "ALL","NPRED","WASP"); flag.sel
+flag.ver <- switch(1, "","_v1","_v2")
+flag.val <- switch (2,"_A","_D")
+
+# Demo station
+station_id <- "Q5_v1"
+
+#flag.save <- F
+font_family <- "serif"
+size_base <- 16
+size_text <- 20
+
+# Places the float at precisely the location in the pandoc code. 
+# Requires the float package. "H" is somewhat equivalent to "h!".
+knitr::opts_chunk$set(echo = FALSE, include=TRUE, collapse = TRUE, comment = "#>", 
+                      message = FALSE, warning = FALSE,
+                      
+                      #fig.path = paste0("figure/","-",flag.sel,flag.ver,"-"), 
+                      dev = "jpeg", dpi=500, out.width = '85%',
+          					  fig.height = 9, fig.width = 9,
+          					  fig.align='center', fig.pos="h!")
+
+```
+
+# Required packages
+
+```{r packages, echo=TRUE, warning=FALSE}
+library(Qgen)
+
+library(lubridate)
+library(moments)
+library(ggplot2) 
+library(zoo)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(data.table)
+
+require(ggpubr) # ggplot2
+require(egg) # facet
+require(lemon) # facet
+
+```
+
+# Load data
+
+Observed streamflow (Q) and its conditional variables, Precipitation (P), Potential ET(PET), Temperature (T) as well as the water blance (P-PET). 
+
+```{r dat, message=FALSE}
+# obsvered Q
+data("Harz_obs_Q")
+
+Qday_obs <- Harz_obs_Q[["Q5"]] %>% rename("year"="iyear","month"="imon","day"="iday","Qd"="Qval")
+Qmon_obs <- aggregate(Qd~year+month, Qday_obs, FUN = mean) %>% rename("Qm"="Qd") %>% arrange(year,month)
+Qyr_obs <- stats::aggregate(Qd~year, Qday_obs, FUN = mean) %>% rename("Qa"="Qd") %>% arrange(year)
+
+head(Qmon_obs[,1:2])
+tail(Qmon_obs[,1:2])
+date_Qobs <- as.Date(paste(Qmon_obs[,1],Qmon_obs[,2],"1", sep="-"))
+range(date_Qobs)
+
+# simulated monthly & daily
+path.out <- paste0(station_id,"/cli_val", flag.val, "/")#mod_",mod_id,"/")
+load(paste0(path.out, "Harz_Qmon_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_mon
+load(paste0(path.out, "Harz_Qday_",flag.sel,"_r",nensemble,flag.ver,".Rdat")) # Qsim_day
+Qsim_mon <- Qmon_sim %>% gather(group,Qm,3:(100+2)) %>% group_split(group, keep = F)  
+Qsim_day <- Qday_sim %>% gather(group,Qd,4:(100+3)) %>% group_split(group, keep = F)  
+summary(Qsim_mon[[1]])
+
+# merge
+Qmon_obs1 <- Qmon_obs %>% rename("obs"="Qm")
+Qmon_sim <- rbindlist(Qsim_mon, idcol="group") %>% rename("sim"="Qm") %>% 
+    merge(Qmon_obs1, by=c("year","month"))  %>% 
+    mutate(season=cut(month, breaks=c(0, 3, 6, 9, 12), right = T, labels = c(1,2,3,4)))
+
+# dates of hist ----
+if(flag.val=="_A"){
+  val.st <- 1971; val.end <- 1990
+} else {
+  val.st <- 1998; val.end <- 2017
+}
+date_year <- val.st:val.end 
+(date_year - unique(Qsim_mon[[1]]$year)) %>% print() # cross check
+
+date_mon <- seq(as.Date(paste(val.st,"1","1",sep="-")),
+                  as.Date(paste(val.end,"12","1",sep="-")),
+                  by="month")
+
+date_day <- seq(as.Date(paste(val.st,"1","1",sep="-")),
+                as.Date(paste(val.end,"12","31",sep="-")),
+                by="day")
+
+Qday_obs <- Qday_obs[!(Qday_obs$day == 29 & Qday_obs$month == 2), ]    
+
+ind_yrs <- which(unique(Qmon_obs[,1]) %in% date_year)
+ind_mon <- which(date_Qobs %in% date_mon)
+ind_day <- which(paste0(Qday_obs[,1], Qday_obs[,2], Qday_obs[,3]) %in%
+                   paste0(year(date_day), month(date_day), day(date_day)))
+```
+
+# Monthly
+
+## Caculate statistics
+
+```{r mon}
+#------------------------------------------------------------------------#
+# OBS input
+Qmon=Qmon_obs$Qm[ind_mon]
+mon=Qmon_obs$mon[ind_mon]
+year=Qmon_obs$year[ind_mon]
+
+# SIM input
+Qmon1 <- sapply(Qsim_mon, function(ls) ls$Qm)
+#summary(Qmon1)
+mon1=mon
+year1=year
+
+plot(date_mon, Qmon, type='l', col="white")
+for(i_ens in 1:3){
+  lines(date_mon, Qmon1[,i_ens],  col="grey")
+}
+lines(date_mon, Qmon, type='l', col="red")
+
+
+nyr_obs <- val.end-val.st+1
+nmo_obs <- nyr_obs*12
+nyr_sim <- nyr_obs
+nmo_sim <- nmo_obs
+nrea <- nensemble
+#------------------------------------------------------------------------#
+# OBS initialisations
+Qm <- numeric(length=12)    # mean
+Qs <- numeric(length=12)    # stddev
+Qmin <- numeric(length=12)  # min
+Qmax <- numeric(length=12)  # max
+Qsk <- numeric(length=12)  # skewness
+Qcor <- numeric(length=12)  # lag-1 autocorrelation
+Qacf_su <- numeric(length=20)  # ACF summer 20 lags
+Qacf_wi <- numeric(length=20)  # ACF winter 20 lags
+
+# SIM initialisations
+Qm1 <- array(NA, dim=c(nrea,12))    # mean (dim: 'nrea' realisations, 12 months)
+Qs1 <- array(NA, dim=c(nrea,12))    # stddev
+Qmin1 <- array(NA, dim=c(nrea,12))  # min
+Qmax1 <- array(NA, dim=c(nrea,12))  # max
+Qsk1 <- array(NA, dim=c(nrea,12))   # skewness
+Qcor1 <- array(NA, dim=c(nrea,12))   # lag-1 autocorrelation
+Qacf1_su <- array(NA, dim=c(nrea,20))   # ACF summer 20 lags
+Qacf1_wi <- array(NA, dim=c(nrea,20))   # ACF summer 20 lags
+amin <- numeric(length=20)  # min ACF 20 lags
+amax <- numeric(length=20)  # max ACF 20 lags
+VDmax1 <- numeric(length=nrea)  # max deficit volume (1)
+DDmax1 <- numeric(length=nrea)  # max deficit duration (2)
+VSmax1 <- numeric(length=nrea)  # max surplus volume (3)
+DSmax1 <- numeric(length=nrea)  # max surplus duration (4)
+SM1 <- numeric(length=nrea)     # storage capacity for full compensation (5)
+LDP1 <- numeric(length=nrea)    # longest dry period for full compensation (6)
+Diff1 <- array(NA, dim=c(nyr_sim*12,nrea))   # mass curve cumsum(Q-MQ); 'nrea' realis; 
+sc <- array(NA, dim=c(nrea,6))    # storage characteristics (dim: 'nrea' realisations, 6 characteristics)
+
+#------------------------------------------------------------------------#
+# Basic OBS statistics by month
+for (i in 1:12) {
+  Qm[i] <- mean(Qmon[mon == i])
+  Qs[i] <- sd(Qmon[mon == i])
+  Qmin[i] <- min(Qmon[mon == i])
+  Qmax[i] <- max(Qmon[mon == i])
+  Qsk[i] <- skewness(Qmon[mon == i])  
+}
+
+# Basic SIM statistics by month for each realization
+#summary(Qmon1)
+for (i in 1:12) {
+  for (j in 1:nrea) {
+    Qm1[j,i] <- mean(Qmon1[,j][mon1 == i])
+    Qs1[j,i] <- sd(Qmon1[,j][mon1 == i])
+    Qmin1[j,i] <- min(Qmon1[,j][mon1 == i])
+    Qmax1[j,i] <- max(Qmon1[,j][mon1 == i])
+    Qsk1[j,i] <- skewness(Qmon1[,j][mon1 == i]) 
+  }
+}
+
+# Lag-1 autocorrelation per month for OBS & SIM
+Qcor <- ac1mon(matrix(Qmon, ncol=12, byrow=T))
+for (j in 1:nrea) { Qcor1[j,1:12]=ac1mon(matrix(Qmon1[,j], ncol=12,byrow=T))}
+
+# ACF OBS & SIM 20 lags for summer and winter
+Qacf_su <- acf(Qmon[mon>4 & mon<11], plot=FALSE)$acf[2:16]    # OBS summer
+Qacf_wi <- acf(Qmon[mon<5 | mon>10], plot=FALSE)$acf[2:16]    # OBS winter
+for(j in 1:nrea) { Qacf1_su[j,1:15] <- acf(Qmon1[,j][mon1>4 & mon1<11], plot=FALSE)$acf[2:16] }    # SIM nreas summer
+for(j in 1:nrea) { Qacf1_wi[j,1:15] <- acf(Qmon1[,j][mon1<5 | mon1>10], plot=FALSE)$acf[2:16] }    # SIM nreas winter
+```
+
+## Basic statistics - monthly
+
+```{r fig-mon-stat}
+#if(flag.save) jpeg("Qmon_valid.jpg", units="cm", width=16.5, height=22, res=dpi_fig)
+
+# plot layout as matrix filled by cols
+layout(matrix(c(1:10), nrow=5, ncol=2, byrow=TRUE))    
+par(ps="12",              # size
+    las=1,                # axis label orientation
+    mar=c(2,5,1,1),       # no. of plot margin lines
+    oma=c(2,2,2,1),       # no. of outer margin lines
+    mgp=c(2.5,0.5,0),         # margin line for the axis title, labels and line.
+    pty="m")              # maximum plot region used
+
+# Box-Plot mean monthly Q
+boxplot(Qm1, range=0, col = "lightblue", xlab='Month', ylab='Average [m3/s]')   # grouped by month
+points(Qm,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+# Box-Plot StDev monthly Q
+boxplot(Qs1, range=0, col = "lightblue", xlab='Month', ylab='Std. Dev. [m3/s]')   # grouped by month
+points(Qs,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+# Box-Plot Min monthly Q
+boxplot(Qmin1, range=0, col = "lightblue", xlab='Month', ylab='Min [m3/s]')   # grouped by month
+points(Qmin,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+# Box-Plot Max monthly Q
+boxplot(Qmax1, range=0, col = "lightblue", xlab='Month', ylab='Max [m3/s]')   # grouped by month
+points(Qmax,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+# Box-Plot Schiefe monthly Q
+boxplot(Qsk1, range=0, col = "lightblue", xlab='Month', ylab='Schiefe [m3/s]')   # grouped by month
+points(Qsk,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+# Box-Plot Lag-1 autocorrelation monthly Q
+boxplot(Qcor1, range=0, col = "lightblue", xlab='Month', ylab='Lag-1 Corr [-]')   # grouped by month
+points(Qcor,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+abline(a=0, b=0, col="black",lty=2)
+
+# Calculate storage statistics for OBS flows----------------------------------->
+# (1,2) Maximum deficit volume (VDmax) and maximum deficit duration (DDmax) for Q < Qlow
+VD <- 0.0; VDmax <- 0.0
+DD <-0; DDmax <- 0
+Qlow <- 0.5*mean(Qmon)   # threshold
+for (i in 1:nmo_obs) {
+  if (Qmon[i] < Qlow)   {VD <- VD + (Qlow-Qmon[i]); DD <- DD+1}
+  else {VDmax <- max(VD,VDmax); VD <- 0; DDmax <- max(DD,DDmax); DD <- 0}
+}
+VDmax <- VDmax*2.628   # scale factor to obtain hm^3 from sum of m^3/s over several months (2.628*10^6 s/mon)
+
+# (3,4) Maximum surplus volume (VSmax) and maximum surplus duration (DSmax) for Q > Qhigh
+VS <- 0.0; VSmax <- 0.0
+DS <-0; DSmax <- 0
+Qhigh <- 2.0*mean(Qmon)   # threshold
+for (i in 1:nmo_obs) {
+  if (Qmon[i] > Qhigh)   {VS <- VS + (Qmon[i]-Qhigh); DS <- DS+1}
+  else {VSmax <- max(VS,VSmax); VS <- 0; DSmax <- max(DS,DSmax); DS <- 0}
+}
+VSmax <- VSmax*2.628   # scale factor to obtain hm^3 from sum of m^3/s over several months (2.628*10^6 s/mon)
+
+# (5,6) Storage capacity for total compensation of flows (SM) and longest dry period (LDP) 
+#Diff <- numeric(length=length(Qmon))
+Diff <- cumsum(Qmon - mean(Qmon))
+SM <- max(Diff)-min(Diff)
+SM <- SM*2.628                                 # scale factor to obtain hm^3 
+LDP <- abs(which.max(Diff)-which.min(Diff))    # get index for max and min
+
+# Calculate storage statistics for SIM flow------------------------------------>
+# (1,2) Maximum deficit volume (VDmax1) and maximum deficit duration (DDmax1) for Q < Qlow
+Qlow <- 0.5*mean(Qmon)   # absolute threshold fixed from OBS !!!
+for (j in 1:nrea) {
+  VD <- 0.0; VDmax1[j] <- 0.0
+  DD <-0; DDmax1[j] <- 0
+  for (i in 1:nmo_sim)
+  {
+    if (Qmon1[i,j] < Qlow)   {VD <- VD + (Qlow-Qmon1[i,j]); DD <- DD+1}
+    else {VDmax1[j] <- max(VD,VDmax1[j]); VD <- 0; DDmax1[j] <- max(DD,DDmax1[j]); DD <- 0}
+  }
+  VDmax1[j] <- VDmax1[j]*2.628   # scale factor to obtain hm^3 from sum of m^3/s over several months (2.628*10^6 s/mon) 
+}
+
+# (3,4) Maximum surplus volume (VSmax) and maximum surplus duration (DSmax) for Q > Qhigh
+Qhigh <- 2.0*mean(Qmon)   # absolute threshold fixed from OBS !!!
+for (j in 1:nrea) {
+  VS <- 0.0; VSmax1[j] <- 0.0
+  DS <-0; DSmax1[j] <- 0
+  for (i in 1:nmo_sim)
+  {
+    if (Qmon1[i,j] > Qhigh)   {VS <- VS + (Qmon1[i,j]-Qhigh); DS <- DS+1}
+    else {VSmax1[j] <- max(VS,VSmax1[j]); VS <- 0; DSmax1[j] <- max(DS,DSmax1[j]); DS <- 0}
+  }
+  VSmax1[j] <- VSmax1[j]*2.628   # scale factor to obtain hm^3 from sum of m^3/s over several months (2.628*10^6 s/mon) 
+}
+
+# (5,6) Storage capacity for total compensation of flows (SM) and longest dry period (LDP) 
+for (j in 1:nrea) {
+  Diff1[,j] <- cumsum(Qmon1[,j] - mean(Qmon1[,j]))
+  SM1[j] <- max(Diff1[,j])-min(Diff1[,j])
+  SM1[j] <- SM1[j]*2.628                                      # scale factor to obtain hm^3 
+  LDP1[j] <- abs(which.max(Diff1[,j])-which.min(Diff1[,j]))   # get index for max and min
+}
+
+# Plot storage capacities
+# Box-Plot StDev monthly Q
+sc[,1] <- VDmax1/VDmax
+sc[,2] <- DDmax1/DDmax
+sc[,3] <- VSmax1/VSmax
+sc[,4] <- DSmax1/DSmax
+sc[,5] <- SM1/SM
+sc[,6] <- LDP1/LDP
+
+boxplot(sc,  range=0, col = "lightblue", names=c('VD','DD','VS','DS','SM','LDP'), xlab = ' ', ylab='SIM/OBS [-]')   # grouped by month
+points(rep(1.0,6),pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+plot(Qacf_su, type='n', xlab='lag', ylab='ACF Summer [-]', ylim=c(-1.0,1.0), xlim=c(1,15))
+#apply(Qacf1_su,1,lines,col='grey')
+for(i in 1:nrow(Qacf1_su)) lines(Qacf1_su[i,],col='grey')
+lines(Qacf_su,col='red',lwd=2)
+lines(apply(Qacf1_su,2,mean),col='black',lwd=2,lty=2)
+abline(a=0, b=0, col="black",lty=2)
+
+plot(Qacf_wi, type='n', xlab='lag', ylab='ACF Winter [-]', ylim=c(-1.0,1.0), xlim=c(1,15))
+#apply(Qacf1_wi,1,lines,col='grey')
+for(i in 1:nrow(Qacf1_wi)) lines(Qacf1_wi[i,],col='grey')
+lines(Qacf_wi,col='red',lwd=2)
+lines(apply(Qacf1_wi,2,mean),col='black',lwd=2,lty=2)
+abline(a=0, b=0, col="black",lty=2)
+
+#if(flag.save) dev.off()
+
+par(op)
+```
+
+## IQR - monthly 
+
+```{r IQR-mon}
+# Calculate percentage of cases where OBS is covered by IQR of SIM 
+# over 6 statistics and 12 months (6*12)
+Qmet_obs <- list(Qm, Qs, Qmin, Qmax, Qsk, Qcor)
+Qmet_sim <- list(Qm1, Qs1, Qmin1, Qmax1, Qsk1, Qcor1)
+n_met <- length(Qmet_obs)
+theta1 <- 0.25; theta2 <- 0.75
+theta3 <- 0.01; theta4 <- 0.99
+
+IQR_cov <- 0
+for(i in 1:12) {
+  for(j in 1:n_met) {
+    Q_tmp <- Qmet_obs[[j]]
+    Q_tmp1<- Qmet_sim[[j]]
+  
+    if(Q_tmp[i] >= quantile(Q_tmp1[,i],theta1) & Q_tmp[i] <= quantile(Q_tmp1[,i],theta2)) IQR_cov <- IQR_cov+1
+
+    if((Q_tmp[i] <= quantile(Q_tmp1[,i],theta1) & Q_tmp[i] >= quantile(Q_tmp1[,i],theta3)) ||
+       (Q_tmp[i] <= quantile(Q_tmp1[,i],theta4) & Q_tmp[i] >= quantile(Q_tmp1[,i],theta2))) IQR_cov <- IQR_cov+0.5
+    
+    #if(Q_tmp[i] >= quantile(Q_tmp1[,i],theta1) & Q_tmp[i] <= quantile(Q_tmp1[,i],theta2)) IQR_cov <- IQR_cov+1
+  }
+}
+
+IQR_cov <- IQR_cov/(n_met*12)
+
+print(paste0('IQR_cov=',round(IQR_cov,3)))
+```
+
+## Monthly Climatology 
+
+```{r fig-mon-clim, fig.width=9, fig.height=7}
+## monthly climatology
+summary(Qsim_mon[[1]]) 
+summary(Qmon_obs)
+
+#monthly average across years
+x.mon.mean_r <- Qmon_sim[,.(sim=mean(sim), obs=mean(obs)),by=c("month","group")]
+#summary(x.mon.mean_r)
+
+x.mon.obs <- aggregate(Qm~month, Qmon_obs, FUN=mean) 
+#summary(x.mon.obs)
+
+p.mon.clim1 <- ggplot(x.mon.mean_r,aes(x=factor(month), y=sim)) +
+
+  geom_boxplot() +
+  stat_summary(fun=mean, geom="point", shape=20, size=3, color="black") +
+
+  geom_point(data=x.mon.obs, aes(x=factor(month), y=Qm, color="Qobs_all"),shape=19) +
+  geom_point(data=x.mon.mean_r, aes(x=factor(month), y=obs, color="Qobs_val"),shape=17) +
+
+  scale_y_continuous(breaks = pretty_breaks()) +
+  scale_color_manual(values=c("red","blue")) +
+
+  labs(x="Month",y="Streamflow",title="Monthly Climatology",
+       color=NULL, fill=NULL) +
+  guides(fill="none") +
+  theme_bw() +
+  theme(text = element_text(size = 16,face='bold',family="serif"),
+        plot.margin = unit(c(0.1,0.1,0.1, 0.1), "cm"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+
+        # strip.background = element_blank(),
+        # strip.placement = "outside",
+
+        legend.position = "right",
+        #legend.position = c(.1,.85),
+        legend.direction = c("horizontal","vertical")[2],
+        legend.background = element_rect(fill="transparent"),
+        legend.title=element_blank()
+  )
+
+p.mon.clim1 %>% print()
+```
+
+## Seasonal Climatology 
+
+```{r fig-sea-clim, fig.width=9, fig.height=7}
+#average across years
+x.ses.mean_r <- Qmon_sim[,.(sim=mean(sim), obs=mean(obs)),by=c("season","group")]
+#summary(x.mon.mean_r)
+
+p.sea.clim1 <- ggplot(x.ses.mean_r,aes(x=factor(season), y=sim)) +
+
+  geom_boxplot() +
+  stat_summary(fun=mean, geom="point", shape=20, size=3, color="black") +
+
+  geom_point(data=x.ses.mean_r, aes(x=factor(season), y=obs, color="Qobs"),shape=17) +
+
+  scale_y_continuous(breaks = pretty_breaks()) +
+  scale_color_manual(values="red") +
+
+  labs(x="Season",y="Streamflow",title="Seasonal Climatology",
+       color=NULL, fill=NULL) +
+  guides(fill="none") +
+  theme_bw() +
+  theme(text = element_text(size = 16,face='bold',family="serif"),
+        plot.margin = unit(c(0.1,0.1,0.1, 0.1), "cm"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+
+        # strip.background = element_blank(),
+        # strip.placement = "outside",
+
+        legend.position = "right",
+        #legend.position = c(.1,.85),
+        legend.direction = c("horizontal","vertical")[2],
+        legend.background = element_rect(fill="transparent"),
+        legend.title=element_blank()
+  )
+
+p.sea.clim1 %>% print()
+```
+
+# Yearly
+
+## Caculate statistics
+
+```{r ann}
+#------------------------------------------------------------------------#
+# OBS input
+Qyr <- Qyr_obs$Qa[ind_yrs]
+Qyr1 <- Qmon_sim[,.(value=mean(sim)),by=c("year","group")] %>% spread(group, value) %>% 
+  dplyr::select(!c(year)) %>% as.matrix()
+#summary(Qyr1)
+#------------------------------------------------------------------------#
+# OBS initialisations
+Qm <- numeric(length=1)    # mean
+Qs <- numeric(length=1)    # stddev
+Qmin <- numeric(length=1)
+Qmax <- numeric(length=1)
+Qsk <- numeric(length=1)  # skewness
+Qacf <- numeric(length=15)  # ACF 15 lags
+
+# SIM initialisations
+Qm1 <- numeric(length=nrea)    # mean for each realisation
+Qs1 <- numeric(length=nrea)    # stddev
+Qmin1 <- numeric(length=nrea)  # min
+Qmax1 <- numeric(length=nrea)  # max
+Qsk1 <- numeric(length=nrea)   # skewness
+Qacf1 <- array(NA, dim=c(nrea,15))   # ACF 15 lags
+amin <- numeric(length=15)  # min ACF 15 lags
+amax <- numeric(length=15)  # max ACF 15 lags
+bpv <- array(NA, dim=c(nrea,4)) # array to hold box-plot-vars cs (dim: nreas, 4 vars)
+
+#------------------------------------------------------------------------#
+# Basic OBS statistics
+Qm <- mean(Qyr)
+Qs <- sd(Qyr)
+Qmin <- min(Qyr)
+Qmax <- max(Qyr)
+Qsk <- skewness(Qyr)  # req. package moments; method not clear !
+
+# Basic SIM statistics for each realisation
+for (j in 1:nrea) {
+  Qm1[j] <- mean(Qyr1[,j])
+  Qs1[j] <- sd(Qyr1[,j])
+  Qmin1[j] <- min(Qyr1[,j])
+  Qmax1[j] <- max(Qyr1[,j])
+  Qsk1[j] <- skewness(Qyr1[,j])  # req. package moments; method not clear !  
+}
+
+# ACF OBS & SIM lags
+Qacf <- acf(Qyr, plot=FALSE)$acf[2:16]
+for(j in 1:nrea) { Qacf1[j,1:15] <- acf(Qyr1[,j], plot=FALSE)$acf[2:16]}
+```
+
+## Basic statistics - yearly
+
+```{r fig-yr-stat, fig.width=9, fig.height=7}
+#if(flag.save) jpeg("Qyr_valid.jpg", units="cm", width=17, height=13, res=dpi_fig)
+
+# plot layout as matrix filled by cols
+layout(matrix(c(1:4), nrow=2, ncol=2, byrow=TRUE))    
+par(ps="12",              # size
+    las=1,                # axis label orientation
+    mar=c(2,5,1,2),       # no. of plot margin lines
+    oma=c(2,2,2,1),       # no. of outer margin lines
+    mgp=c(2.5,0.5,0),         # margin line for the axis title, labels and line.
+    pty="m")              # maximum plot region used
+
+
+# Plot OBs annual TS
+plot(Qyr, type='s',lwd=2,col='blue', xlab='Zeit [Jahre]', ylab='Qyr OBS [m3/s]')    # plot annual time seris
+abline(a=mean(Qyr), b=0, col="black",lty=2)
+
+# Plot 1 realisation of SIM annual TS
+plot(Qyr1[,1], type='s',lwd=2,col='blue', xlab='Zeit [Jahre]', ylab='Qyr SIM [m3/s]')    # plot annual time seris
+#line(Qyr1[,2], type='l', lwd=1, col='red')
+abline(a=mean(Qyr1[,2]), b=0, col="black",lty=2)
+
+# Combine variables for Box-Plot; build ratios SIM/OBS 
+bpv[,1] <- Qm1/Qm
+bpv[,2] <- Qs1/Qs
+bpv[,3] <- Qmin1/Qmin
+bpv[,4] <- Qmax1/Qmax
+#bpv[,5] <- Qsk1/Qsk
+
+# Box-plot annual statistics
+boxplot(bpv,  range=0, col = "lightblue", names=c('mean','SD','min','max'), 
+        xlab = ' ', ylab='SIM/OBS [-]')   # grouped by month
+points(rep(1.0,5),pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+# Plot ACF  -- lines
+plot(Qacf, type='n', xlab='lag', ylab='ACF [-]', ylim=c(-1.0,1.0), xlim=c(1,14))
+for(i in 1:nrow(Qacf1)) lines(Qacf1[i,],col='grey')
+lines(Qacf,col='red',lwd=2)
+lines(apply(Qacf1,2,mean),col='black',lwd=2,lty=2)
+
+#if(flag.save) dev.off()
+```
+
+# Daily 
+
+## Caculate statistics
+
+```{r day}
+#------------------------------------------------------------------------#
+# OBS input
+Qday <- Qday_obs$Qd[ind_day]
+mon <- Qday_obs$mon[ind_day]
+#summary(Qday)
+# SIM input
+Qday1 <- sapply(Qsim_day, function(ls) ls$Qd)
+mon1 <- mon
+#summary(Qday1)
+
+#------------------------------------------------------------------------#
+# OBS initialisations
+Qm <- numeric(length=12)                      # mean
+Qs <- numeric(length=12)                      # stddev
+Qmin <- numeric(length=12)
+Qmax <- numeric(length=12)
+Qsk <- numeric(length=12)                     # skewness
+Qcor <- numeric(length=12)                    # lag-1 autocorrelation
+Qacf_su <- numeric(length=30)                 # ACF summer 30 lags
+Qacf_wi <- numeric(length=30)                 # ACF winter 30 lags
+
+# SIM initialisations
+Qm1 <- array(NA, dim=c(nrea,12))    # mean (dim: nrea realisations, 12 months)
+Qs1 <- array(NA, dim=c(nrea,12))    # stddev
+Qmin1 <- array(NA, dim=c(nrea,12))  # min
+Qmax1 <- array(NA, dim=c(nrea,12))  # max
+Qsk1 <- array(NA, dim=c(nrea,12))   # skewness
+Qcor1 <- array(NA, dim=c(nrea,12))   # lag-1 autocorrelation
+Qacf1_su <- array(NA, dim=c(nrea,30))   # ACF summer 30 lags
+Qacf1_wi <- array(NA, dim=c(nrea,30))   # ACF summer 30 lags
+amin <- numeric(length=30)  # min ACF 30 lags
+amax <- numeric(length=30)  # max ACF 30 lags
+fmin <- numeric(length=nyr_sim*31)  # min FDC by month
+fmax <- numeric(length=nyr_sim*31)  # max FDC by month
+Qsrt1 <- array(NA, dim=c(nyr_sim*31,nrea))  # sorted Qday1 by month
+
+#------------------------------------------------------------------------#
+# Basic OBS statistics by month
+for (i in 1:12)  {
+  Qm[i] <- mean(Qday[mon == i])
+  Qs[i] <- sd(Qday[mon == i])
+  Qmin[i] <- min(Qday[mon == i])
+  Qmax[i] <- max(Qday[mon == i])
+  Qsk[i] <- skewness(Qday[mon == i])  # req. package moments; method not clear !
+}
+
+# Basic SIM statistics by month for each realization
+for (i in 1:12) {
+  for (j in 1:nrea){
+    Qm1[j,i] <- mean(Qday1[,j][mon1 == i])
+    Qs1[j,i] <- sd(Qday1[,j][mon1 == i])
+    Qmin1[j,i] <- min(Qday1[,j][mon1 == i])
+    Qmax1[j,i] <- max(Qday1[,j][mon1 == i])
+    Qsk1[j,i] <- skewness(Qday1[,j][mon1 == i])  # req. package moments; method not clear !  
+  }
+}
+
+# Lag-1 OBS autocorrelation per month
+for (i in 1:12) {
+  Qcor[i] <- acf(Qday[mon == i], plot=FALSE, lag.max=1)$acf[2]
+}
+
+# Lag-1 SIM autocorrelation per month
+for (i in 1:12) {
+  for (j in 1:nrea) {
+    Qcor1[j,i] <- acf(Qday1[,j][mon1 == i], plot=FALSE, lag.max=1)$acf[2]    
+  }
+}
+
+
+# ACF OBS & SIM 30 lags for summer and winter
+Qacf_su <- acf(Qday[mon>4 & mon<11], plot=FALSE)$acf[1:30]    # OBS summer
+Qacf_wi <- acf(Qday[mon<5 | mon>10], plot=FALSE)$acf[1:30]    # OBS winter
+
+for (j in 1:nrea) { 
+  Qacf1_su[j,1:30] <- acf(Qday1[,j][mon1>4 & mon1<11], plot=FALSE)$acf[1:30] 
+}# SIM nrea reas summer
+
+for (j in 1:nrea) { 
+  Qacf1_wi[j,1:30] <- acf(Qday1[,j][mon1<5 | mon1>10], plot=FALSE)$acf[1:30] 
+}    # SIM nrea reas winter
+
+```
+
+## Basic statistics - daily
+
+```{r fig-day-stat, warning=FALSE}
+#if(flag.save) jpeg("Qday1valid.jpg", units="cm", width=17, height=17, res=dpi_fig)
+
+# plot layout as matrix filled by cols
+layout(matrix(c(1:6), nrow=3, ncol=2, byrow=TRUE))    
+par(ps="12",              # size
+    las=1,                # axis label orientation
+    mar=c(2,5,1,2),       # no. of plot margin lines
+    oma=c(2,2,2,1),       # no. of outer margin lines
+    mgp=c(3,1,0),         # margin line for the axis title, labels and line.
+    pty="m")              # maximum plot region used
+
+# Box-Plot mean daily Q
+boxplot(Qm1, range=0, col = "lightblue", xlab='Month', ylab='Average [m3/s]')   # grouped by month
+points(Qm,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+# Box-Plot Std Dev daily Q
+boxplot(Qs1, range=0, col = "lightblue", #ylim=c(0,100),
+        xlab='Month', ylab='Std. Dev. [m3/s]')   # grouped by month
+points(Qs,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+
+# Box-Plot Min daily Q
+boxplot(Qmin1, range=0, col = "lightblue", #ylim=c(0,20),
+        xlab='Month', ylab='Min [m3/s]')   # grouped by month
+points(Qmin,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+
+# Box-Plot Max daily Q
+boxplot(Qmax1, range=0, col = "lightblue", #ylim=c(0,2000),
+        xlab='Month', ylab='Max [m3/s]')   # grouped by month
+points(Qmax,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+
+# Box-Plot Schiefe daily Q
+boxplot(Qsk1, range=0, col = "lightblue", #ylim=c(0,20),
+        xlab='Month', ylab='Schiefe [-]')   # grouped by month
+points(Qsk,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+
+# Box-Plot Lag-1 autocorrelation daily Q
+boxplot(Qcor1, range=0, col = "lightblue", #ylim=c(0.5,1),
+        xlab='Month', ylab='Lag-1 Corr [-]')   # grouped by month
+points(Qcor,pch=4,col="red",lwd=2)         # add obs mean value as red cross
+
+
+#if(flag.save) dev.off()
+```
+
+## IQR - daily
+
+```{r IQR-day}
+# Calculate percentage of cases where OBS is covered by IQR of SIM 
+# over 6 statistics and 12 months (6*12)
+Qmet_obs <- list(Qm, Qs, Qmin, Qmax, Qsk, Qcor)
+Qmet_sim <- list(Qm1, Qs1, Qmin1, Qmax1, Qsk1, Qcor1)
+n_met <- length(Qmet_obs)
+theta1 <- 0.25; theta2 <- 0.75
+theta3 <- 0.01; theta4 <- 0.99
+
+IQR_cov <- 0
+for(i in 1:12) {
+  for(j in 1:n_met) {
+    Q_tmp <- Qmet_obs[[j]]
+    Q_tmp1<- Qmet_sim[[j]]
+  
+    if(Q_tmp[i] >= quantile(Q_tmp1[,i],theta1) & Q_tmp[i] <= quantile(Q_tmp1[,i],theta2)) IQR_cov <- IQR_cov+1
+
+    if((Q_tmp[i] <= quantile(Q_tmp1[,i],theta1) & Q_tmp[i] >= quantile(Q_tmp1[,i],theta3)) ||
+       (Q_tmp[i] <= quantile(Q_tmp1[,i],theta4) & Q_tmp[i] >= quantile(Q_tmp1[,i],theta2))) IQR_cov <- IQR_cov+0.5
+    
+    #if(Q_tmp[i] >= quantile(Q_tmp1[,i],theta1) & Q_tmp[i] <= quantile(Q_tmp1[,i],theta2)) IQR_cov <- IQR_cov+1
+  }
+}
+
+IQR_cov <- IQR_cov/(n_met*12)
+
+print(paste0('IQR_cov=',round(IQR_cov,3)))
+```
+
+## CDF
+
+```{r fig-day-cdf, warning=FALSE}
+# plot summer & winter ACF and FDC for 4 selected months as 3 x 2 matrix 
+#if(flag.save) jpeg("Qday2valid.jpg", units="cm", width=17, height=17, res=400)
+
+# plot layout as matrix filled by cols
+layout(matrix(c(1:6), nrow=3, ncol=2, byrow=TRUE))    
+par(ps="12",              # size
+    las=1,                # axis label orientation
+    mar=c(2,5,1,2),       # no. of plot margin lines
+    oma=c(2,2,2,1),       # no. of outer margin lines
+    mgp=c(3,1,0),         # margin line for the axis title, labels and line.
+    pty="m")              # maximum plot region used
+
+# Plot daily ACF summer - polygon
+x <- c(1:30)
+xx <- c(x,rev(x))   # x-values for polygon
+for (k in 1:30) {
+  amin[k] <- min(Qacf1_su[,k])
+  amax[k] <- max(Qacf1_su[,k])
+}
+yy <- c(amin,rev(amax))   # y-values for polygon
+plot(Qacf_su, type='l', ylim=c(0,1), xlab='lag', ylab='ACF Summer [-]')
+polygon(xx,yy,col="lightgrey",border=NA)
+lines(Qacf_su, type='l')
+
+# Plot daily ACF winter - polygon
+x <- c(1:30)
+xx <- c(x,rev(x))   # x-values for polygon
+for (k in 1:30) {
+  amin[k] <- min(Qacf1_wi[,k])
+  amax[k] <- max(Qacf1_wi[,k])
+}
+yy <- c(amin,rev(amax))   # y-values for polygon
+plot(Qacf_wi, type='l', ylim=c(0,1), xlab='lag', ylab='ACF Winter [-]')
+polygon(xx,yy,col="lightgrey",border=NA)
+if(nensemble==1) lines(xx,yy,col="red",border=NA)
+lines(Qacf_wi, type='l')
+
+# Calculate and plot flow duration curve by month OBS & SIM
+ystr<-c('Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec')
+
+# months January, April, July, October
+for (m in seq(1,12,by=3)) {
+  Qsrt <- sort(Qday[mon==m])
+  n0 <- length(Qday[mon==m])
+  Fn <- seq(1,n0)/(n0+1)
+  n1 <- length(Qday1[,1][mon1==m])
+  for (j in 1:nrea) { Qsrt1[1:n1,j] <- sort(Qday1[,j][mon1==m]) }
+  Fn1 <- seq(1, n1)/(n1+1)
+  xx <- c(Fn1,rev(Fn1))
+  for (k in 1:n1)
+  {
+    fmin[k] <- min(Qsrt1[k,])
+    fmax[k] <- max(Qsrt1[k,])
+  }
+  yy <- c(fmin[1:n1],rev(fmax[1:n1]))   # y-values for polygon
+  plot(Fn, Qsrt, type='l', pch=1, cex=0.5, log="y", #ylim=c(1,500),
+       xlab='Pu [-]', ylab=paste('Q [m3/s] - ',ystr[m]))
+  polygon(xx,yy,col="lightgrey",border=NA)
+  lines(Fn,Qsrt, type='l', pch=1, cex=0.5)
+}
+
+#if(flag.save) dev.off()
+```

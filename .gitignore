@@ -3,8 +3,12 @@ reports/figure/
 reports/*Rdat
 reports/Q5
 reports/Q5_v2
-reports/*html
 inst/
+
+*html
+*jpg
+*Rdat
+*zip
 
 # History files
 .Rhistory
