@@ -1,8 +1,6 @@
 #==============================================================================#
 rm(list=ls()); graphics.off() # clear environment and graphics
-# Getting the path of your current open file
-current_path = rstudioapi::getActiveDocumentContext()$path
-setwd(dirname(current_path)); setwd("../")
+setwd("H:/!Project/Qgen/")
 
 # load package----
 library(scales)
@@ -17,36 +15,38 @@ library(data.table)
 
 #devtools::install_github("hzambran/hydroTSM")
 #devtools::install_github("itsoukal/anySim")
-library(hydroTSM)
-library(Ecdat)
-library(ExtDist)
-library(anySim)
+# library(hydroTSM)
+# library(Ecdat)
+# library(ExtDist)
+# library(anySim)
 library(Qgen)
 
 #==============================================================================#
 # global variables----
 set.seed(20230607)
-#set.seed(20231116)
 mod_id <- 7 # GCM realization: 1-6 is raw, and 7 is the sampled scenario
 station_id <- "Q5" # station
 nensemble <- 100 # must larger than 1 for knn bootstrap
 
 flag.save <- T # save the Qsim or not
 
-flag.ver <- switch(1, "","_v1","_v2","_v3")
+flag.ver <- switch(3, "","_v1","_v2")
 flag.sel <- switch(2, "ALL","NPRED","WASP") # predictor selection method
 
+#flag.gcm <- switch (1,"_hist","_rcp85_near", "_rcp85_far")
+gcms <- c("_hist","_rcp85_near", "_rcp85_far")[1]
+for(flag.gcm in gcms){
 
-for(flag.val in c("_A","_D")){
-  #flag.val <- switch (2,"_A","_D")
   # output----
-  path.out <- paste0("reports/",station_id,"/cli_val",flag.val,"/")#,"/mod_",mod_id
+  path.out <- paste0("reports/",station_id,"/cli_mod",flag.gcm,"/mod_",mod_id,"/")
   dir.create(path.out, recursive = T)
 
-  if(flag.val=="_A"){
-    val.st <- 1971; val.end <- 1990
+  if(flag.gcm=="_hist") {
+    val.st <- 1971; val.end <- 2000
+  } else if(flag.gcm=="_rcp85_near") {
+    val.st <- 2021; val.end <- 2050
   } else {
-    val.st <- 1998; val.end <- 2017
+    val.st <- 2071; val.end <- 2100
   }
 
   time.st <- Sys.time()
@@ -64,7 +64,7 @@ for(flag.val in c("_A","_D")){
   date_Qobs <- as.Date(paste(Qmon[,1],Qmon[,2],"1", sep="-"))
   range(date_Qobs)
 
-  # observed climate
+  # obsvered climate
   data("Harz_obs_cli")
   pred.mat <- sapply(Harz_obs_cli, function(ls) ls[[3]])
   #pred.mat <- pred.mat[,-4] # remove Gmon
@@ -84,23 +84,21 @@ for(flag.val in c("_A","_D")){
   date_cli <- as.Date(paste(Pmon[,1],Pmon[,2],"1", sep="-"))
   range(date_cli)
 
-  # ### combine GCM data
-  # hist_mon <- get(load(paste0("data/Harz_hist_mon.Rdat")))
-  # rcp85_mon <- get(load(paste0("data/Harz_rcp85_mon.Rdat")))
-  #
-  # Harz_gcm <- lapply(1:4, function(i) rbind(hist_mon[[mod_id]][[i]],
-  #                                           rcp85_mon[[mod_id]][[i]]))
-  # names(Harz_gcm) <- names(hist_mon[[mod_id]])
-  # pred.mat <- sapply(Harz_gcm, function(ls) ls[[3]])
-  #
-  # Pmon <- Harz_gcm$Pmon
-  # date_gcm <- as.Date(paste(Pmon[,1],Pmon[,2],"1", sep="-"))
-  # range(date_gcm)
-  #
-  # pred.mat <- pred.mat %>% data.frame() %>% mutate(Bmon = Pmon-Emon)
-  # pred.all.cli <- pred_mat_lag(pred.mat, lag=n_lag, mv=mv)
-  # colnames(pred.all.cli)
-  # head(pred.all.cli)
+  ### GCM data----
+  if(flag.gcm=="_hist"){
+    load(paste0("data/Harz_hist_mon.Rdat"))
+  } else {
+    load(paste0("data/Harz_rcp85_mon.Rdat"))
+  }
+  pred.mat <- sapply(Harz_gcm[[mod_id]], function(ls) ls[[3]])
+  Pmon <- Harz_gcm[[mod_id]]$Pmon
+  date_gcm <- as.Date(paste(Pmon[,1],Pmon[,2],"1", sep="-"))
+  range(date_gcm)
+
+  pred.mat <- pred.mat %>% data.frame() %>% mutate(Bmon = Pmon-Emon)
+  pred.all.cli <- pred_mat_lag(pred.mat, lag=n_lag, mv=mv)
+  colnames(pred.all.cli)
+  head(pred.all.cli)
 
   # dates----
   date_year <- val.st:val.end
@@ -108,41 +106,29 @@ for(flag.val in c("_A","_D")){
   date_val <- seq(as.Date(paste(val.st,"1","1",sep="-")),
                   as.Date(paste(val.end,"12","1",sep="-")),
                   by="month")
-  range(date_val)
-  range(date_Qobs); range(date_cli)
+
   ind_Qobs <- which(date_Qobs %in% date_val)
+  ind_Qobs1 <- which(date_Qobs %in% date_cli)
 
-  # train
-  date_cli1 <- date_cli[! (date_cli %in% date_val)]; range(date_cli1)
-
-  ind_Qobs1 <- which(date_Qobs %in% date_cli1); range(date_Qobs[ind_Qobs1])
-  ind_cli1 <- which(! (date_cli %in% date_val)); range(date_cli[ind_cli1])
-
-  ind_cli <-  which(date_cli %in% date_val); range(date_cli[ind_cli])
-  #ind_gcm <-  which(date_gcm %in% date_val)
+  ind_cli <-  which(date_cli %in% date_val)
+  ind_gcm <-  which(date_gcm %in% date_val)
 
   #==============================================================================#
   # knn conditional bootstrap ----
-  #out_sel <- readRDS(paste0("reports/Harz_",flag.sel,flag.ver,".rds"))
   out_sel <- readRDS(paste0("reports/Harz_",flag.sel,".rds"))
   cpy <- out_sel[[1]]
   pw <- out_sel[[2]]
 
   if(TRUE){
-    x <- Qmon$Qm[ind_Qobs1]
-    z <- pred.all[ind_cli1, cpy]
-    zout <- pred.all[ind_cli, cpy]
+    x <- Qmon$Qm[ind_Qobs]
+    z <- pred.all[ind_cli, cpy]
 
-    x.boot <- Qgen::knn(x, z, zout, k=5, pw = pw,reg = FALSE,nensemble = nensemble)
+    # x <- Qmon$Qm[ind_Qobs1]
+    # z <- pred.all[, cpy]
+    zout <- pred.all.cli[ind_gcm, cpy]
+
+    x.boot <- knn(x, z, zout, pw = pw,reg = FALSE,nensemble = nensemble)
   }
-
-  ## overview----
-  summary(x); summary(z)
-  par(pty="s")
-  x_obs <- Qmon$Qm[which(date_Qobs %in% date_val)]
-  x_hat <- x.boot[,1]
-  plot(x_obs, x_hat, xlim=c(0,2),ylim=c(0,2))
-  abline(a=0,b=1)
 
   #==============================================================================#
   # Monthly Disaggregation----
@@ -157,9 +143,9 @@ for(flag.val in c("_A","_D")){
   Qsim_year <- Qmon_sim[,.(value=mean(sim)),by=c("year","group")] %>% spread(group, value)
   summary(Qsim_year)
 
-  Qmon1 <- Qmon %>% subset(!(year %in% date_year)); unique(Qmon1$year)
+  Qmon1 <- Qmon %>% subset(year %in% date_year); unique(Qmon1$year) # use only the calibration period
   k <- floor(0.5 + 3 * sqrt(length(unique(Qmon1$year))));k
-  Qsim_mon <- lapply(1:nensemble, function(i) knn_annual_to_monthly(Qsim_year[,c(1,i+1)], Qmon1, K=k))
+  Qsim_mon <- lapply(1:nensemble, function(i) knn_annual_to_monthly(Qsim_year[,c(1,i+1)], Qmon, K=k))
   #summary(Qsim_mon)
 
   #==============================================================================#
@@ -167,9 +153,9 @@ for(flag.val in c("_A","_D")){
   Qsim_year <- Qmon_sim[,.(value=mean(sim)),by=c("year","group")] %>% spread(group, value) %>% data.frame()
   summary(Qsim_year)
 
-  Qday1 <- Qday %>% subset(!(year %in% date_year)); unique(Qday1$year)
+  Qday1 <- Qday %>% subset(year %in% date_year); unique(Qday1$year) # use only the calibration period
   k <- floor(0.5 + 3 * sqrt(length(unique(Qday1$year))));k
-  Qsim_day <- lapply(1:nensemble, function(i) knn_annual_to_daily(Qsim_year[,c(1,i+1)], Qday1, K=k))
+  Qsim_day <- lapply(1:nensemble, function(i) knn_annual_to_daily(Qsim_year[,c(1,i+1)], Qday, K=k))
   #summary(Qsim_day)
 
   #==============================================================================#
