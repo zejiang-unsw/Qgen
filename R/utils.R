@@ -127,7 +127,7 @@ time2season <- function (x, out.fmt = "months", type = "default")
 #'
 #' @return a vector
 #' @export
-#' @import Ecdat stats
+#' @import stats
 #'
 deseason_trend <- function(x, win.len=12, do.plot=FALSE){
 
