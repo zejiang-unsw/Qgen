@@ -1,9 +1,13 @@
-data-raw/Harz-Data/
+data-raw/Harz_Data/
+data-raw/Harz_Data_Q5/
+data/
+
 reports/figure/
 reports/*Rdat
 reports/Q5
 reports/Q5_v2
-inst/
+
+R/wasp.R
 
 *html
 *jpg
